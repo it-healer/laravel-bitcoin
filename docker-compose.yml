@@ -1,0 +1,15 @@
+services:
+    bitcoin:
+        user: 1000:1000
+        image: lncm/bitcoind:v25.0
+        volumes:
+            - ./.bitcoin:/data/.bitcoin
+        restart: on-failure
+        stop_grace_period: 15m30s
+        networks:
+            - sail
+        ports:
+            - "8333:8333"
+            - "8332:8332"
+            - "28332:28332"
+            - "28333:28333"
