@@ -114,6 +114,72 @@ $schedule->command('bitcoin:sync')
     ->runInBackground();
 ```
 
+В `Supervisor` создайте сервис bitcoin со следующими настройками:
+
+```
+[program:bitcoin]
+command=php artisan bitcoin
+user=bitcoin
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autostart=true
+autorestart=true
+startretries=100
+```
+
+Если Вы используйте `Laravel Sail` - то в файл `supervisord.conf` добавьте:
+```
+[program:bitcoin]
+command=/usr/bin/php -d variables_order=EGPCS /var/www/html/artisan bitcoin
+user=%(ENV_SUPERVISOR_PHP_USER)s
+environment=LARAVEL_SAIL="1"
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autostart=true
+autorestart=true
+startretries=100
+```
+
+## Electrum
+
+Для установки приложения Electrum установите на сервер зависимости
+```bash
+apt-get install python3-pyqt6 libsecp256k1-dev python3-cryptography
+```
+
+А потом выполните команду:
+```bash
+php artisan electrum:install
+```
+
+Для запуска процесса Electrum добавьте в Supervisor конфигурацию:
+```
+[program:electrum]
+command=/usr/bin/php -d variables_order=EGPCS /var/www/html/artisan electrum
+user=%(ENV_SUPERVISOR_PHP_USER)s
+environment=LARAVEL_SAIL="1"
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+autostart=true
+autorestart=true
+startretries=100
+```
+
+В Sheduler добавьте выполнение команды `electrum:sync` ежеминутно:
+```php
+Schedule::command('electrum:sync')
+    ->everyMinute()
+    ->runInBackground();
+```
+
+Для корректной работы `локальной ноды` в Firewall разрешите `TCP 8333`
+
 ## Commands
 
 Scan transactions and update balances:
@@ -155,7 +221,6 @@ class EmptyWebhookHandler implements WebhookHandlerInterface
 The following versions of PHP are supported by this version.
 
 * PHP 8.2 and older
-* PHP Extensions: Decimal.
 
 ## Changelog
 

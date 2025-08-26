@@ -5,7 +5,7 @@ namespace ItHealer\LaravelBitcoin\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use ItHealer\LaravelBitcoin\Casts\DecimalCast;
+use ItHealer\LaravelBitcoin\Casts\BigDecimalCast;
 use ItHealer\LaravelBitcoin\Enums\AddressType;
 
 class BitcoinAddress extends Model
@@ -23,8 +23,8 @@ class BitcoinAddress extends Model
     protected $casts = [
         'type' => AddressType::class,
         'sync_at' => 'datetime',
-        'balance' => DecimalCast::class,
-        'unconfirmed_balance' => DecimalCast::class,
+        'balance' => BigDecimalCast::class,
+        'unconfirmed_balance' => BigDecimalCast::class,
     ];
 
     public function wallet(): BelongsTo

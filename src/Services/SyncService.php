@@ -2,7 +2,7 @@
 
 namespace ItHealer\LaravelBitcoin\Services;
 
-use Decimal\Decimal;
+use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
@@ -51,8 +51,8 @@ class SyncService
     {
         $getBalances = $this->api->request('getbalances', [], $this->wallet->name);
         $this->wallet->update([
-            'balance' => new Decimal((string)$getBalances['mine']['trusted'], 8),
-            'unconfirmed_balance' => new Decimal((string)$getBalances['mine']['untrusted_pending'], 8),
+            'balance' => BigDecimal::ofUnscaledValue((string)$getBalances['mine']['trusted'], 8),
+            'unconfirmed_balance' => BigDecimal::ofUnscaledValue((string)$getBalances['mine']['untrusted_pending'], 8),
             'sync_at' => Date::now(),
         ]);
 
@@ -105,7 +105,7 @@ class SyncService
                 'txid' => $item['txid']
             ], [
                 'wallet_id' => $this->wallet->id,
-                'amount' => new Decimal((string)$item['amount']),
+                'amount' => BigDecimal::of((string)$item['amount']),
                 'block_height' => $item['blockheight'] ?? null,
                 'confirmations' => $item['confirmations'] ?? 0,
                 'time_at' => Date::createFromTimestamp($item['time']),

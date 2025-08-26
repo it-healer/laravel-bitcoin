@@ -1,0 +1,21 @@
+{
+  "name": "bitcoin-bip39",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@bitcoinerlab/descriptors": "^2.3.1",
+    "@bitcoinerlab/secp256k1": "^1.2.0",
+    "bip32": "^5.0.0-rc.0",
+    "bip39": "^3.1.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "esbuild": "^0.25.8",
+    "tiny-secp256k1": "^2.2.4"
+  }
+}

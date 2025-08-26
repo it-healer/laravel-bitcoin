@@ -19,6 +19,10 @@ return new class extends Migration {
                 ->nullable();
             $table->text('password')
                 ->nullable();
+            $table->text('mnemonic')
+                ->nullable();
+            $table->text('seed')
+                ->nullable();
             $table->text('descriptors');
             $table->string('sync_at')
                 ->nullable();

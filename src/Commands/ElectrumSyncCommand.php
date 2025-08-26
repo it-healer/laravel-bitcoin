@@ -3,13 +3,14 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use ItHealer\LaravelBitcoin\Services\Sync\SyncService;
+use ItHealer\LaravelBitcoin\Services\Electrum\SyncService;
 
-class BitcoinSyncCommand extends Command
+
+class ElectrumSyncCommand extends Command
 {
-    protected $signature = 'bitcoin:sync';
+    protected $signature = 'electrum:sync';
 
-    protected $description = 'Bitcoin sync process';
+    protected $description = 'Electrum sync process';
 
     public function handle(SyncService $service): void
     {

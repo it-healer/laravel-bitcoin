@@ -13,13 +13,26 @@ return new class extends Migration {
                 ->unique();
             $table->string('title')
                 ->nullable();
-            $table->string('host');
+            $table->string('host')
+                ->default('127.0.0.1');
             $table->unsignedInteger('port')
                 ->default(8332);
             $table->string('username')
                 ->nullable();
             $table->text('password')
                 ->nullable();
+            $table->json('config')
+                ->nullable();
+            $table->integer('pid')
+                ->nullable();
+            $table->timestamp('sync_at')
+                ->nullable();
+            $table->boolean('worked')
+                ->default(false);
+            $table->json('worked_data')
+                ->default('[]');
+            $table->boolean('available')
+                ->default(true);
             $table->timestamps();
         });
     }

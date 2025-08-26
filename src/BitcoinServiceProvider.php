@@ -2,9 +2,16 @@
 
 namespace ItHealer\LaravelBitcoin;
 
+use ItHealer\LaravelBitcoin\Commands\BitcoinCommand;
+use ItHealer\LaravelBitcoin\Commands\BitcoinCoreInstallCommand;
+use ItHealer\LaravelBitcoin\Commands\ElectrumCommand;
+use ItHealer\LaravelBitcoin\Commands\ElectrumInstallCommand;
+use ItHealer\LaravelBitcoin\Commands\BitcoinNodeSyncCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinSyncCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinSyncWalletCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinWebhookCommand;
+use ItHealer\LaravelBitcoin\Commands\ElectrumNodeSyncCommand;
+use ItHealer\LaravelBitcoin\Commands\ElectrumSyncCommand;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -16,21 +23,26 @@ class BitcoinServiceProvider extends PackageServiceProvider
         $package
             ->name('bitcoin')
             ->hasConfigFile()
-            ->hasMigrations([
-                'create_bitcoin_nodes_table',
-                'create_bitcoin_wallets_table',
-                'create_bitcoin_addresses_table',
-                'create_bitcoin_deposits_table',
-            ])
+            ->discoversMigrations()
             ->hasCommands(
+                BitcoinCommand::class,
+                BitcoinCoreInstallCommand::class,
+                BitcoinNodeSyncCommand::class,
                 BitcoinSyncCommand::class,
                 BitcoinSyncWalletCommand::class,
                 BitcoinWebhookCommand::class,
+
+                ElectrumCommand::class,
+                ElectrumInstallCommand::class,
+                ElectrumSyncCommand::class,
+                ElectrumNodeSyncCommand::class,
             )
             ->hasInstallCommand(function(InstallCommand $command) {
                 $command
                     ->publishConfigFile()
-                    ->publishMigrations();
+                    ->publishMigrations()
+                    ->askToRunMigrations()
+                    ->askToStarRepoOnGitHub('it-healer/laravel-bitcoin');
             });
 
         $this->app->singleton(Bitcoin::class);

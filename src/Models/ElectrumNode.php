@@ -3,10 +3,10 @@
 namespace ItHealer\LaravelBitcoin\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use ItHealer\LaravelBitcoin\BitcoindRpcApi;
+use ItHealer\LaravelBitcoin\ElectrumRpcApi;
 
-class BitcoinNode extends Model
+class ElectrumNode extends Model
 {
     protected $fillable = [
         'name',
@@ -34,24 +34,10 @@ class BitcoinNode extends Model
         'available' => 'boolean',
     ];
 
-    public function wallets(): HasMany
+    public function api(): ElectrumRpcApi
     {
-        /** @var class-string<BitcoinWallet> $model */
-        $model = config('bitcoin.models.wallet');
-
-        return $this->hasMany($model, 'node_id');
-    }
-
-    public function api(): BitcoindRpcApi
-    {
-        /** @var class-string<BitcoindRpcApi> $model */
-        $model = config('bitcoin.models.rpc_client');
-
-        return new $model(
-            host: $this->host,
-            port: $this->port,
-            username: $this->username,
-            password: $this->password,
+        return new ElectrumRpcApi(
+            electrum: $this
         );
     }
 }

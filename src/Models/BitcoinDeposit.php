@@ -4,7 +4,7 @@ namespace ItHealer\LaravelBitcoin\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use ItHealer\LaravelBitcoin\Casts\DecimalCast;
+use ItHealer\LaravelBitcoin\Casts\BigDecimalCast;
 
 class BitcoinDeposit extends Model
 {
@@ -19,7 +19,7 @@ class BitcoinDeposit extends Model
     ];
 
     protected $casts = [
-        'amount' => DecimalCast::class,
+        'amount' => BigDecimalCast::class,
         'confirmations' => 'integer',
         'time_at' => 'datetime',
     ];
