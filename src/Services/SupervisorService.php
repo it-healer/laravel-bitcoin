@@ -233,8 +233,29 @@ class SupervisorService extends BaseConsole
             $process = $this->processes[$nodeId];
 
             if ($process->isRunning()) {
-                $process->stop(3);
-                $this->log("Stopped process for node #{$nodeId}");
+                // попробуем мягко: rpc stop
+                $node = $this->model::find($nodeId);
+                if ($node) {
+                    $cmd = sprintf(
+                        'bitcoin-cli -rpcconnect=%s -rpcport=%d -rpcuser=%s -rpcpassword=%s stop',
+                        escapeshellarg($node->host),
+                        (int) $node->port,
+                        escapeshellarg($node->username),
+                        escapeshellarg($node->password)
+                    );
+                    exec($cmd);
+                    $this->log("Sent RPC stop to node #{$nodeId}");
+                    // дадим время завершиться
+                    $process->waitUntil(function() use ($process) {
+                        return !$process->isRunning();
+                    });
+                }
+
+                if ($process->isRunning()) {
+                    // если всё ещё жив — тогда уж жёстко
+                    $process->stop(10, SIGTERM); // SIGTERM, не SIGKILL
+                    $this->log("Terminated process for node #{$nodeId}");
+                }
             }
 
             unset($this->processes[$nodeId]);
@@ -247,6 +268,18 @@ class SupervisorService extends BaseConsole
 
         $this->model::where('id', $nodeId)->update(['pid' => null]);
     }
+
+    protected function killPid(int $pid): void
+    {
+        if (posix_kill($pid, 0)) {
+            // мягко через SIGTERM
+            posix_kill($pid, SIGTERM);
+            $this->log("Sent SIGTERM to PID {$pid}");
+        } else {
+            $this->log("Process with PID {$pid} does not exist", 'error');
+        }
+    }
+
 
     protected function closeProcesses(): static
     {
@@ -264,15 +297,5 @@ class SupervisorService extends BaseConsole
             return false;
         }
         return true;
-    }
-
-    protected function killPid(int $pid): void
-    {
-        if (posix_kill($pid, 0)) {
-            exec("kill -9 {$pid}");
-            $this->log("Killed process with PID {$pid}");
-        } else {
-            $this->log("Process with PID {$pid} is not killed", 'error');
-        }
     }
 }
