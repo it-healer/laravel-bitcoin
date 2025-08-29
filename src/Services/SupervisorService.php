@@ -206,6 +206,8 @@ class SupervisorService extends BaseConsole
         fwrite($fh, "[".date('Y-m-d H:i:s')."] Starting process: {$cmdLine}\n");
 
         $process = new Process($args);
+        $process->setTimeout(null);
+        $process->setIdleTimeout(null);
         $process->start(function (string $type, string $buffer) use ($fh) {
             if ($type === Process::ERR) {
                 fwrite($fh, "[stderr] " . $buffer);
@@ -244,7 +246,17 @@ class SupervisorService extends BaseConsole
                         escapeshellarg($node->username),
                         escapeshellarg($node->password)
                     );
-                    exec($cmd);
+                    $out = shell_exec($cmd . ' 2>&1');
+                    $this->log("RPC stop output: ".trim((string)$out));
+
+                    $deadline = time() + 120;
+                    while ($process->isRunning() && time() < $deadline) {
+                        usleep(200_000);
+                    }
+                    if ($process->isRunning()) {
+                        $process->stop(10, SIGTERM);
+                    }
+
                     $this->log("Sent RPC stop to node #{$nodeId}");
                     // дадим время завершиться
                     $process->waitUntil(function() use ($process) {
