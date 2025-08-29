@@ -237,7 +237,8 @@ class SupervisorService extends BaseConsole
                 $node = $this->model::find($nodeId);
                 if ($node) {
                     $cmd = sprintf(
-                        'bitcoin-cli -rpcconnect=%s -rpcport=%d -rpcuser=%s -rpcpassword=%s stop',
+                        '%s -rpcconnect=%s -rpcport=%d -rpcuser=%s -rpcpassword=%s stop',
+                        base_path('bitcoin-cli'),
                         escapeshellarg($node->host),
                         (int) $node->port,
                         escapeshellarg($node->username),
