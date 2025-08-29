@@ -40,6 +40,7 @@ return [
             'max' => 10999,
         ],
         'watcher_period' => 30,
+        'args' => [],
 
         'network' => 'mainnet',
         'directory' => storage_path('app/bitcoin'),

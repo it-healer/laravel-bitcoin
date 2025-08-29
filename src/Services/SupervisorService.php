@@ -161,7 +161,8 @@ class SupervisorService extends BaseConsole
             '-upnp=0',
             '-natpmp=0',
             '-maxconnections='.$maxConn,
-            // '-debuglogfile='.$logFile,
+            '-printtoconsole=1',
+            ...config('bitcoin.core.args', []),
         ];
 
         if ($pruneEnabled) {
