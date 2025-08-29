@@ -15,8 +15,6 @@ class BitcoinNode extends Model
         'port',
         'username',
         'password',
-        'config',
-        'pid',
         'sync_at',
         'worked',
         'worked_data',
@@ -26,8 +24,6 @@ class BitcoinNode extends Model
     protected $casts = [
         'port' => 'integer',
         'password' => 'encrypted',
-        'config' => 'json',
-        'pid' => 'integer',
         'sync_at' => 'datetime',
         'worked' => 'boolean',
         'worked_data' => 'json',

@@ -21,10 +21,6 @@ return new class extends Migration {
                 ->nullable();
             $table->text('password')
                 ->nullable();
-            $table->json('config')
-                ->nullable();
-            $table->integer('pid')
-                ->nullable();
             $table->timestamp('sync_at')
                 ->nullable();
             $table->boolean('worked')
