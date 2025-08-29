@@ -15,6 +15,7 @@ class SupervisorService extends BaseConsole
     protected string $model = BitcoinNode::class;
 
     protected array $processes = [];
+    protected array $processLogs = [];
     protected int $watcherPeriod;
 
     public function __construct()
@@ -98,6 +99,9 @@ class SupervisorService extends BaseConsole
             try {
                 $process = static::startProcess($node);
                 $this->processes[$node->id] = $process;
+                if (isset($process->__logHandle) && \is_resource($process->__logHandle)) {
+                    $this->processLogs[$node->id] = $process->__logHandle;
+                }
 
                 sleep(2);
 
@@ -157,7 +161,7 @@ class SupervisorService extends BaseConsole
             '-upnp=0',
             '-natpmp=0',
             '-maxconnections='.$maxConn,
-            '-debuglogfile='.$logFile,
+            // '-debuglogfile='.$logFile,
         ];
 
         if ($pruneEnabled) {
@@ -191,15 +195,31 @@ class SupervisorService extends BaseConsole
             $args[] = '-regtest';
         }
 
+        // Откроем файл в append-режиме (без буферизации)
+        $fh = fopen($logFile, 'ab');
+        if ($fh === false) {
+            throw new \Exception("Cannot open log file: {$logFile}");
+        }
+        stream_set_write_buffer($fh, 0);
+
         $process = new Process($args);
-        $process->start();
+        $process->start(function (string $type, string $buffer) use ($fh) {
+            if ($type === Process::ERR) {
+                fwrite($fh, "[stderr] " . $buffer);
+            } else {
+                fwrite($fh, $buffer);
+            }
+        });
 
         sleep(3);
         if ($error = trim($process->getErrorOutput())) {
             if (!$process->isRunning()) {
+                fclose($fh);
                 throw new \RuntimeException($error);
             }
         }
+
+        $process->__logHandle = $fh;
 
         return $process;
     }
@@ -215,6 +235,11 @@ class SupervisorService extends BaseConsole
             }
 
             unset($this->processes[$nodeId]);
+        }
+
+        if (isset($this->processLogs[$nodeId]) && \is_resource($this->processLogs[$nodeId])) {
+            @fclose($this->processLogs[$nodeId]);
+            unset($this->processLogs[$nodeId]);
         }
 
         $this->model::where('id', $nodeId)->update(['pid' => null]);
