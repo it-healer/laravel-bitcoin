@@ -202,6 +202,9 @@ class SupervisorService extends BaseConsole
         }
         stream_set_write_buffer($fh, 0);
 
+        $cmdLine = implode(' ', array_map('escapeshellarg', $args));
+        fwrite($fh, "[".date('Y-m-d H:i:s')."] Starting process: {$cmdLine}\n");
+
         $process = new Process($args);
         $process->start(function (string $type, string $buffer) use ($fh) {
             if ($type === Process::ERR) {
