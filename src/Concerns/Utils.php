@@ -10,7 +10,7 @@ trait Utils
 {
     public function bip39ToDescriptors(string|array $mnemonic, ?string $passphrase = null): array
     {
-        $command = config('bitcoin.core.bip39_command');
+        $command = config('bitcoin.bip39_command');
         if (empty($command)) {
             throw new \Exception('Bitcoin BIP39 command not defined');
         }

@@ -25,8 +25,6 @@ class BitcoinServiceProvider extends PackageServiceProvider
             ->hasConfigFile()
             ->discoversMigrations()
             ->hasCommands(
-                BitcoinCommand::class,
-                BitcoinCoreInstallCommand::class,
                 BitcoinNodeSyncCommand::class,
                 BitcoinSyncCommand::class,
                 BitcoinSyncWalletCommand::class,

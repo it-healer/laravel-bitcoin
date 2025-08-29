@@ -3,12 +3,7 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\App;
-use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
-use ItHealer\LaravelBitcoin\Services\CoreInstallerService;
 use ItHealer\LaravelBitcoin\Services\ElectrumSupervisorService;
-use ItHealer\LaravelBitcoin\Services\SupervisorService;
-use ItHealer\LaravelBitcoin\Services\SyncService;
 
 class ElectrumCommand extends Command
 {

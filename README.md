@@ -114,36 +114,6 @@ $schedule->command('bitcoin:sync')
     ->runInBackground();
 ```
 
-В `Supervisor` создайте сервис bitcoin со следующими настройками:
-
-```
-[program:bitcoin]
-command=php artisan bitcoin
-user=bitcoin
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
-stderr_logfile_maxbytes=0
-autostart=true
-autorestart=true
-startretries=100
-```
-
-Если Вы используйте `Laravel Sail` - то в файл `supervisord.conf` добавьте:
-```
-[program:bitcoin]
-command=/usr/bin/php -d variables_order=EGPCS /var/www/html/artisan bitcoin
-user=%(ENV_SUPERVISOR_PHP_USER)s
-environment=LARAVEL_SAIL="1"
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
-stderr_logfile_maxbytes=0
-autostart=true
-autorestart=true
-startretries=100
-```
-
 ## Electrum
 
 Для установки приложения Electrum установите на сервер зависимости
@@ -179,6 +149,19 @@ Schedule::command('electrum:sync')
 ```
 
 Для корректной работы `локальной ноды` в Firewall разрешите `TCP 8333`
+
+## Установка Bitcoind на сервер
+1. Заходим на сайт https://bitcoincore.org/en/download/ и скачиваем актуальную версию Bitcoin Core для вашей системы (Linux tgz) при помощи команды: `wget https://bitcoincore.org/bin/bitcoin-core-29.0/bitcoin-29.0-x86_64-linux-gnu.tar.gz`.
+2. Распаковуем архив при помощи команды: `tar -xvf bitcoin-29.0-x86_64-linux-gnu.tar.gz`
+3. Устанавливаем приложение командой: `sudo install -m 0755 -o root -g root -t /usr/local/bin bitcoin-29.0/bin/*`
+4. Теперь у Вас доступна команда `bitcoind` и `bitcoin-cli`.
+5. От пользователя создаём папку `mkdir ~/.bitcoin` и файл `~./bitcoin/bitcoin.conf` содержимое описано ниже.
+6. Создаём supervisor команду и запускаем её.
+
+### Bitcoin.conf
+```
+
+```
 
 ## Commands
 
