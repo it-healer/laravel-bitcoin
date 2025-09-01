@@ -107,6 +107,13 @@ trait Transfers
 
         $api = $wallet->node->api();
 
+        if ($wallet->plain_password) {
+            $api->request('walletpassphrase', [
+                'passphrase' => $wallet->plain_password,
+                'timeout' => 60
+            ], $wallet->name);
+        }
+
         $listUnspent = $api->request('listunspent', ['minconf' => 0, 'addresses' => [$fromAddress]], $wallet->name);
         if (empty($listUnspent)) {
             throw new \Exception("На адресе $fromAddress нет доступного баланса, баланс: 0 BTC!");
@@ -367,6 +374,13 @@ trait Transfers
         }
 
         $api = $wallet->node->api();
+
+        if ($wallet->plain_password) {
+            $api->request('walletpassphrase', [
+                'passphrase' => $wallet->plain_password,
+                'timeout' => 60
+            ], $wallet->name);
+        }
 
         $listUnspent = $api->request('listunspent', ['minconf' => 0, 'addresses' => [$fromAddress]], $wallet->name);
         if (empty($listUnspent)) {
