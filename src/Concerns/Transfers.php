@@ -336,7 +336,7 @@ trait Transfers
         BitcoinAddress|string $fromAddress,
         array $recipients,
         bool $subtractFeeFromOutputs = false,
-        BitcoinAddress|string|null $changeAddress = null,
+        BitcoinAddress|string|null $changeAddress = null
     ): array {
         if ($fromAddress instanceof BitcoinAddress) {
             $fromAddress = $fromAddress->address;
@@ -452,7 +452,8 @@ trait Transfers
         BitcoinAddress|string $fromAddress,
         array $recipients,
         bool $subtractFeeFromOutputs = false,
-        BitcoinAddress|string|null $changeAddress = null
+        BitcoinAddress|string|null $changeAddress = null,
+        ?array &$preview = null
     ): array {
         if (!($fromAddress instanceof BitcoinAddress)) {
             $fromAddress = $wallet->addresses()->whereAddress($fromAddress)->firstOrFail();
@@ -464,7 +465,7 @@ trait Transfers
             $changeAddress = $changeAddress->address;
         }
 
-        $previewData = $this->previewMassPSBT(
+        $preview = $this->previewMassPSBT(
             $wallet,
             $fromAddress,
             $recipients,
@@ -475,13 +476,13 @@ trait Transfers
         $api = $wallet->node->api();
 
         $sendRawTransaction = $api->request('sendrawtransaction', [
-            'hexstring' => $previewData['hex'],
+            'hexstring' => $preview['hex'],
         ], $wallet->name);
 
         $txid = $sendRawTransaction['result'];
 
         $model = Bitcoin::getModelDeposit();
-        foreach ($previewData['recipients'] as $item) {
+        foreach ($preview['recipients'] as $item) {
             $to = $wallet->addresses()->whereAddress($item['address'])->first();
             if ($to) {
                 $model::create([
@@ -515,7 +516,7 @@ trait Transfers
 
         $transfers = [];
 
-        foreach ($previewData['recipients'] as $item) {
+        foreach ($preview['recipients'] as $item) {
             $transfer = $model::create([
                 'wallet_id' => $wallet->id,
                 'address_id' => $fromAddress->id,
