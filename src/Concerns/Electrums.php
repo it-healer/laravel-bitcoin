@@ -5,7 +5,7 @@ namespace ItHealer\LaravelBitcoin\Concerns;
 use Illuminate\Support\Str;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\ElectrumNode;
-use ItHealer\LaravelBitcoin\Services\ElectrumSupervisorService;
+use ItHealer\LaravelBitcoin\Services\Electrum\ElectrumSupervisorService;
 
 trait Electrums
 {

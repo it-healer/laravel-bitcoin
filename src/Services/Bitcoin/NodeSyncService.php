@@ -1,14 +1,19 @@
 <?php
 
-namespace ItHealer\LaravelBitcoin\Services\Sync;
+namespace ItHealer\LaravelBitcoin\Services\Bitcoin;
 
+use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Date;
+use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
+use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 use ItHealer\LaravelBitcoin\Services\BaseConsole;
 
 class NodeSyncService extends BaseConsole
 {
     protected readonly BitcoinNode $node;
+    /** @var array<string, InvokedProcess> */
+    protected array $processes = [];
 
     public function __construct(BitcoinNode|string|int $node)
     {
@@ -34,6 +39,8 @@ class NodeSyncService extends BaseConsole
                 'worked' => true,
                 'worked_data' => $blockchainInfo,
             ]);
+
+            $this->syncWallets();
         }
         catch(\Exception $e) {
             $this->node->update([
@@ -49,5 +56,31 @@ class NodeSyncService extends BaseConsole
         }
 
         $this->log("Синхронизация ноды {$this->node->name} завершена!");
+    }
+
+    protected function syncWallets(): static
+    {
+        $walletModel = Bitcoin::getModelWallet();
+
+        $walletModel::query()
+            ->orderBy('sync_at', 'desc')
+            ->get()
+            ->each(function(BitcoinWallet $wallet) {
+                $this->log("Начинаем синхронизацию кошелька $wallet->name...");
+
+                try {
+                    $service = new WalletSyncService($wallet);
+                    $service
+                        ->setLogger(fn(string $message, ?string $type) => $this->log($message, $type))
+                        ->run();
+
+                    $this->log("Успех!", "success");
+                }
+                catch( \Exception $e ) {
+                    $this->log("Ошибка: {$e->getMessage()}", "error");
+                }
+            });
+
+        return $this;
     }
 }

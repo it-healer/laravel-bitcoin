@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use ItHealer\LaravelBitcoin\Casts\BigDecimalCast;
 use ItHealer\LaravelBitcoin\Casts\EncryptedCast;
+use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 
 class BitcoinWallet extends Model
 {
@@ -50,26 +51,22 @@ class BitcoinWallet extends Model
 
     public function node(): BelongsTo
     {
-        /** @var class-string<BitcoinNode> $model */
-        $model = config('bitcoin.models.node');
-
-        return $this->belongsTo($model, 'node_id');
+        return $this->belongsTo(Bitcoin::getModelNode(), 'node_id');
     }
 
     public function addresses(): HasMany
     {
-        /** @var class-string<BitcoinAddress> $model */
-        $model = config('bitcoin.models.address');
-
-        return $this->hasMany($model, 'wallet_id', 'id');
+        return $this->hasMany(Bitcoin::getModelAddress(), 'wallet_id', 'id');
     }
 
     public function deposits(): HasMany
     {
-        /** @var class-string<BitcoinDeposit> $model */
-        $model = config('bitcoin.models.deposit');
+        return $this->hasMany(Bitcoin::getModelDeposit(), 'wallet_id', 'id');
+    }
 
-        return $this->hasMany($model, 'wallet_id', 'id');
+    public function transfers(): HasMany
+    {
+        return $this->hasMany(Bitcoin::getModelTransfer(), 'wallet_id', 'id');
     }
 
     public function unlockWallet(?string $password): void

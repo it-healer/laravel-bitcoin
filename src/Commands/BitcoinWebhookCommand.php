@@ -4,6 +4,7 @@ namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\App;
+use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\BitcoinDeposit;
 use ItHealer\LaravelBitcoin\WebhookHandlers\WebhookHandlerInterface;
 
@@ -15,17 +16,18 @@ class BitcoinWebhookCommand extends Command
 
     public function handle(): void
     {
-        /** @var class-string<BitcoinDeposit> $model */
-        $model = config('bitcoin.models.deposit');
-        $deposit = $model::with(['wallet', 'address'])->findOrFail($this->argument('deposit_id'));
+        $depositId = $this->argument('deposit_id');
+
+        $model = Bitcoin::getModelDeposit();
+        $deposit = $model::with(['wallet', 'address'])->findOrFail($depositId);
 
         /** @var class-string<WebhookHandlerInterface> $model */
-        $model = config('bitcoin.webhook_handler');
+        $model = config('bitcoin.webhook.handler');
 
         /** @var WebhookHandlerInterface $handler */
         $handler = App::make($model);
 
-        $handler->handle($deposit->wallet, $deposit->address, $deposit);
+        $handler->handle($deposit);
 
         $this->info('Webhook successfully execute!');
     }

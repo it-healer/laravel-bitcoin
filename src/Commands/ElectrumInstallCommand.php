@@ -3,7 +3,7 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use ItHealer\LaravelBitcoin\Services\ElectrumInstallerService;
+use ItHealer\LaravelBitcoin\Services\Electrum\ElectrumInstallerService;
 
 class ElectrumInstallCommand extends Command
 {

@@ -7,26 +7,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use ItHealer\LaravelBitcoin\Casts\BigDecimalCast;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 
-class BitcoinDeposit extends Model
+class BitcoinTransfer extends Model
 {
     protected $fillable = [
         'wallet_id',
         'address_id',
         'txid',
+        'receiver_address',
         'amount',
+        'comment',
         'block_height',
         'confirmations',
         'time_at',
-        'webhook_status',
-        'webhook_data',
     ];
 
     protected $casts = [
         'amount' => BigDecimalCast::class,
         'confirmations' => 'integer',
         'time_at' => 'datetime',
-        'webhook_status' => 'integer',
-        'webhook_data' => 'json',
     ];
 
     public function wallet(): BelongsTo

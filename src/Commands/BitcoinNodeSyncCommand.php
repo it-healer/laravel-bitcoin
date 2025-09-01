@@ -4,7 +4,7 @@ namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\App;
-use ItHealer\LaravelBitcoin\Services\Sync\NodeSyncService;
+use ItHealer\LaravelBitcoin\Services\Bitcoin\NodeSyncService;
 
 class BitcoinNodeSyncCommand extends Command
 {

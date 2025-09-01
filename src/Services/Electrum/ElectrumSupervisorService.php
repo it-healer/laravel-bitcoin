@@ -1,11 +1,10 @@
 <?php
 
-namespace ItHealer\LaravelBitcoin\Services;
+namespace ItHealer\LaravelBitcoin\Services\Electrum;
 
-use Brick\Math\BigDecimal;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\ElectrumNode;
-use ItHealer\LaravelBitcoin\Models\BitcoinNode;
+use ItHealer\LaravelBitcoin\Services\BaseConsole;
 use Symfony\Component\Process\Process;
 
 class ElectrumSupervisorService extends BaseConsole

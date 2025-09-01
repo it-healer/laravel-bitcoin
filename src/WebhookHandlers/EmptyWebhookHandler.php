@@ -9,8 +9,10 @@ use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 class EmptyWebhookHandler implements WebhookHandlerInterface
 {
-    public function handle(BitcoinWallet $wallet, BitcoinAddress $address, BitcoinDeposit $deposit): void
+    public function handle(BitcoinDeposit $deposit): ?array
     {
-        Log::error('Bitcoin Wallet '.$wallet->name.' new transaction '.$deposit->txid.' for address '.$address->address);
+        Log::error('Bitcoin new deposit '.$deposit->txid);
+
+        return null;
     }
 }

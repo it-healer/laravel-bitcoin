@@ -1,8 +1,9 @@
 <?php
 
-namespace ItHealer\LaravelBitcoin\Services;
+namespace ItHealer\LaravelBitcoin\Services\Electrum;
 
 use Illuminate\Support\Facades\File;
+use ItHealer\LaravelBitcoin\Services\BaseConsole;
 
 class ElectrumInstallerService extends BaseConsole
 {

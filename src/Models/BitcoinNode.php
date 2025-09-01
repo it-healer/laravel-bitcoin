@@ -5,6 +5,7 @@ namespace ItHealer\LaravelBitcoin\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use ItHealer\LaravelBitcoin\BitcoindRpcApi;
+use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 
 class BitcoinNode extends Model
 {
@@ -32,16 +33,12 @@ class BitcoinNode extends Model
 
     public function wallets(): HasMany
     {
-        /** @var class-string<BitcoinWallet> $model */
-        $model = config('bitcoin.models.wallet');
-
-        return $this->hasMany($model, 'node_id');
+        return $this->hasMany(Bitcoin::getModelWallet(), 'node_id');
     }
 
     public function api(): BitcoindRpcApi
     {
-        /** @var class-string<BitcoindRpcApi> $model */
-        $model = config('bitcoin.models.rpc_client');
+        $model = Bitcoin::getModelAPI();
 
         return new $model(
             host: $this->host,

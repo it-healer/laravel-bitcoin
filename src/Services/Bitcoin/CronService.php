@@ -1,15 +1,14 @@
 <?php
 
-namespace ItHealer\LaravelBitcoin\Services\Sync;
+namespace ItHealer\LaravelBitcoin\Services\Bitcoin;
 
 use Illuminate\Process\InvokedProcess;
-use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Process;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
 use ItHealer\LaravelBitcoin\Services\BaseConsole;
 
-class SyncService extends BaseConsole
+class CronService extends BaseConsole
 {
     /** @var array<string, InvokedProcess> */
     protected array $processes = [];

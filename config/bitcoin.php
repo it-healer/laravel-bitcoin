@@ -2,9 +2,15 @@
 
 return [
     /*
-     * Sets the handler to be used when Bitcoin Wallet has a new deposit.
+     * WebHook
+     *
+     * Handler - Sets the handler to be used when Bitcoin Wallet has a new deposit.
+     * Confirmations - Minimum number of confirmations for a call webhook.
      */
-    'webhook_handler' => \ItHealer\LaravelBitcoin\WebhookHandlers\EmptyWebhookHandler::class,
+    'webhook' => [
+        'handler' => \ItHealer\LaravelBitcoin\WebhookHandlers\EmptyWebhookHandler::class,
+        'confirmations' => 6,
+    ],
 
     /*
      * Set address type of generate new addresses.
@@ -17,9 +23,11 @@ return [
      *
      * BitcoindRpcApi model must be or extend `ItHealer\LaravelBitcoin\BitcoindRpcApi::class`
      * BitcoinNode model must be or extend `ItHealer\LaravelBitcoin\Models\BitcoinNode::class`
+     * ElectrumNode model must be or extend `ItHealer\LaravelBitcoin\Models\ElectrumNode::class`
      * BitcoinWallet model must be or extend `ItHealer\LaravelBitcoin\Models\BitcoinWallet::class`
      * BitcoinAddress model must be or extend `ItHealer\LaravelBitcoin\Models\BitcoinAddress::class`
      * BitcoinDeposit model must be or extend `ItHealer\LaravelBitcoin\Models\BitcoinDeposit::class`
+     * BitcoinTransfer model must be or extend `ItHealer\LaravelBitcoin\Models\BitcoinTransfer::class`
      */
     'models' => [
         'rpc_client' => \ItHealer\LaravelBitcoin\BitcoindRpcApi::class,
@@ -28,6 +36,7 @@ return [
         'wallet' => \ItHealer\LaravelBitcoin\Models\BitcoinWallet::class,
         'address' => \ItHealer\LaravelBitcoin\Models\BitcoinAddress::class,
         'deposit' => \ItHealer\LaravelBitcoin\Models\BitcoinDeposit::class,
+        'transfer' => \ItHealer\LaravelBitcoin\Models\BitcoinTransfer::class,
     ],
 
     /*

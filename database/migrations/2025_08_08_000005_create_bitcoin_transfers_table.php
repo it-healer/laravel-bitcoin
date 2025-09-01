@@ -9,7 +9,7 @@ use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 return new class extends Migration {
     public function up(): void
     {
-        Schema::create('bitcoin_deposits', function (Blueprint $table) {
+        Schema::create('bitcoin_transfers', function (Blueprint $table) {
             $table->id();
             $table->foreignIdFor(BitcoinWallet::class, 'wallet_id')
                 ->constrained('bitcoin_wallets')
@@ -18,23 +18,23 @@ return new class extends Migration {
                 ->constrained('bitcoin_addresses')
                 ->cascadeOnDelete();
             $table->string('txid');
+            $table->string('receiver_address');
             $table->decimal('amount', 20, 8);
+            $table->string('comment')
+                ->nullable();
             $table->unsignedInteger('block_height')
                 ->nullable();
-            $table->integer('confirmations');
-            $table->timestamp('time_at');
-            $table->tinyInteger('webhook_status')
+            $table->integer('confirmations')
                 ->default(0);
-            $table->json('webhook_data')
-                ->nullable();
+            $table->timestamp('time_at');
             $table->timestamps();
 
-            $table->unique(['address_id', 'txid'], 'unique_index');
+            $table->unique(['address_id', 'txid', 'receiver_address'], 'unique_index');
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('bitcoin_deposits');
+        Schema::dropIfExists('bitcoin_transfers');
     }
 };

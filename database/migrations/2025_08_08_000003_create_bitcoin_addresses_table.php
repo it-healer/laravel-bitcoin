@@ -24,6 +24,8 @@ return new class extends Migration {
                 ->nullable();
             $table->decimal('unconfirmed_balance', 20, 8)
                 ->nullable();
+            $table->boolean('available')
+                ->default(true);
             $table->timestamps();
 
             $table->unique(['wallet_id', 'address', 'type']);

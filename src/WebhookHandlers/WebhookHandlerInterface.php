@@ -8,5 +8,5 @@ use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 interface WebhookHandlerInterface
 {
-    public function handle(BitcoinWallet $wallet, BitcoinAddress $address, BitcoinDeposit $deposit): void;
+    public function handle(BitcoinDeposit $deposit): ?array;
 }

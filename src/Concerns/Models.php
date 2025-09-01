@@ -5,6 +5,7 @@ namespace ItHealer\LaravelBitcoin\Concerns;
 use ItHealer\LaravelBitcoin\BitcoindRpcApi;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinDeposit;
+use ItHealer\LaravelBitcoin\Models\BitcoinTransfer;
 use ItHealer\LaravelBitcoin\Models\ElectrumNode;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -49,6 +50,14 @@ trait Models
     public function getModelDeposit(): string
     {
         return config('bitcoin.models.deposit');
+    }
+
+    /**
+     * @return class-string<BitcoinTransfer>
+     */
+    public function getModelTransfer(): string
+    {
+        return config('bitcoin.models.transfer');
     }
 
     /**

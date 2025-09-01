@@ -3,15 +3,15 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use ItHealer\LaravelBitcoin\Services\Sync\SyncService;
+use ItHealer\LaravelBitcoin\Services\Bitcoin\CronService;
 
-class BitcoinSyncCommand extends Command
+class BitcoinCronCommand extends Command
 {
-    protected $signature = 'bitcoin:sync';
+    protected $signature = 'bitcoin:cron';
 
-    protected $description = 'Bitcoin sync process';
+    protected $description = 'Bitcoin cron process';
 
-    public function handle(SyncService $service): void
+    public function handle(CronService $service): void
     {
         $service
             ->setLogger(fn(string $message, ?string $type) => $this->{$type ? ($type === 'success' ? 'info' : $type) : 'line'}($message))

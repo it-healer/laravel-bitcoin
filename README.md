@@ -109,7 +109,7 @@ Register Service Provider and Facade in app, edit `config/app.php`:
 
 In file `app/Console/Kernel` in method `schedule(Schedule $schedule)` add
 ```
-$schedule->command('bitcoin:sync')
+$schedule->command('bitcoin:cron')
     ->everyMinute()
     ->runInBackground();
 ```
@@ -141,9 +141,9 @@ autorestart=true
 startretries=100
 ```
 
-В Sheduler добавьте выполнение команды `electrum:sync` ежеминутно:
+В Sheduler добавьте выполнение команды `electrum:cron` ежеминутно:
 ```php
-Schedule::command('electrum:sync')
+Schedule::command('electrum:cron')
     ->everyMinute()
     ->runInBackground();
 ```
@@ -159,8 +159,48 @@ Schedule::command('electrum:sync')
 6. Создаём supervisor команду и запускаем её.
 
 ### Bitcoin.conf
+Ложим в папку `/home/%USER%/.bitcoin/bitcoin.conf`:
+```
+server=1
+datadir=/home/%USER%/.bitcoin
+walletdir=/home/%USER%/.bitcoin/wallets
+
+rpcbind=127.0.0.1
+rpcport=10497
+rpcallowip=127.0.0.1
+rpcauth=qEIop8Liv9TisWri:f635d8c82dc0c1205134ab909f39e9a5$508243bcc43f507a1ecb8160b97e6b81b2c756ff06caa1b7c33f3d31de325843
+
+deprecatedrpc=addresses
+
+disablewallet=0
+
+listen=0
+dnsseed=1
+upnp=0
+natpmp=0
+
+prune=550
+
+fallbackfee=0.000050
+printtoconsole=1
 ```
 
+Создаём файл `Supervisor'а` с названием `/etc/supervisor/conf.d/bitcoin.conf`:
+```
+[program:bitcoin]
+process_name=%(program_name)s
+command=/usr/local/bin/bitcoind
+autostart=true
+autorestart=true
+startretries=3
+user=wallet
+redirect_stderr=true
+stdout_logfile=/home/%USER%/%PATH_FOR_LARAVEL%/storage/logs/bitcoin.log
+stdout_logfile_maxbytes=50MB
+stdout_logfile_backups=5
+stopsignal=TERM
+stopwaitsecs=6000
+environment=HOME="/home/%USER%"
 ```
 
 ## Commands
@@ -184,7 +224,7 @@ You can set up a WebHook that will be called when a new incoming BTC deposit is 
 In file config/bitcoin.php you can set param:
 
 ```php
-'webhook_handler' => \ItHealer\LaravelBitcoin\WebhookHandlers\EmptyWebhookHandler::class,
+'webhook.handler' => \ItHealer\LaravelBitcoin\WebhookHandlers\EmptyWebhookHandler::class,
 ```
 
 Example WebHook handler:
@@ -192,9 +232,9 @@ Example WebHook handler:
 ```php
 class EmptyWebhookHandler implements WebhookHandlerInterface
 {
-    public function handle(BitcoinWallet $wallet, BitcoinAddress $address, BitcoinDeposit $transaction): void
+    public function handle(BitcoinDeposit $transaction): void
     {
-        Log::error('Bitcoin Wallet '.$wallet->name.' new transaction '.$transaction->txid.' for address '.$address->address);
+        Log::error('Bitcoin new deposit '.$transaction->txid);
     }
 }
 ```

@@ -6,11 +6,11 @@ use Illuminate\Console\Command;
 use ItHealer\LaravelBitcoin\Services\Electrum\SyncService;
 
 
-class ElectrumSyncCommand extends Command
+class ElectrumCronCommand extends Command
 {
-    protected $signature = 'electrum:sync';
+    protected $signature = 'electrum:cron';
 
-    protected $description = 'Electrum sync process';
+    protected $description = 'Electrum cron process';
 
     public function handle(SyncService $service): void
     {
