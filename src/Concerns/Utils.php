@@ -2,8 +2,8 @@
 
 namespace ItHealer\LaravelBitcoin\Concerns;
 
-use FurqanSiddiqui\BIP39\BIP39;
-use FurqanSiddiqui\BIP39\Language\English;
+use ItHealer\LaravelBitcoin\BIP39\BIP39;
+use ItHealer\LaravelBitcoin\BIP39\Language\English;
 use Illuminate\Support\Facades\Process;
 
 trait Utils
@@ -65,7 +65,7 @@ trait Utils
         return true;
     }
 
-    public function bip39MnemonicSeed(string|array $mnemonic, string $passphrase = null): string
+    public function bip39MnemonicSeed(string|array $mnemonic, ?string $passphrase = null): string
     {
         if (!is_array($mnemonic)) {
             $mnemonic = explode(' ', $mnemonic);
