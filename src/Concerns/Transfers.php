@@ -82,6 +82,7 @@ trait Transfers
      * @param  int|float|string|BigDecimal|null  $amount  Сумма к переводу (null - весь баланс)
      * @param  bool  $subtractFeeFromOutputs  Комиссию платит получатель? (false)
      * @param  BitcoinAddress|string|null  $changeAddress  Адрес для сдачи (null - отправитель)
+     * @param  string|null  $data  Данные OP_RETURN в hex, до 80 байт (не обязательно). Выходы: получатель, сдача, OP_RETURN
      * @return array
      * @throws \Exception
      */
@@ -92,7 +93,12 @@ trait Transfers
         int|float|string|BigDecimal|null $amount = null,
         bool $subtractFeeFromOutputs = false,
         BitcoinAddress|string|null $changeAddress = null,
+        ?string $data = null,
     ): array {
+        if ($data !== null && (!ctype_xdigit($data) || strlen($data) % 2 !== 0 || strlen($data) > 160)) {
+            throw new \InvalidArgumentException('OP_RETURN data must be hex, up to 80 bytes');
+        }
+
         if ($fromAddress instanceof BitcoinAddress) {
             $fromAddress = $fromAddress->address;
         }
@@ -147,6 +153,13 @@ trait Transfers
             $funderOptions['subtractFeeFromOutputs'] = [0];
         }
 
+        $outputs = [$toAddress => $amount->__toString()];
+        if ($data !== null) {
+            // Порядок важен (например, для THORChain): получатель, сдача, затем OP_RETURN
+            $outputs = [[$toAddress => $amount->__toString()], ['data' => $data]];
+            $funderOptions['changePosition'] = 1;
+        }
+
         $candidates = array_values(
             array_filter(
                 $listUnspent,
@@ -165,7 +178,7 @@ trait Transfers
             try {
                 $createPSBT = $api->request('walletcreatefundedpsbt', [
                     'inputs' => $inputs,
-                    'outputs' => [$toAddress => $amount->__toString()],
+                    'outputs' => $outputs,
                     'options' => $funderOptions,
                 ], $wallet->name);
                 $processPSBT = $api->request('walletprocesspsbt', [
@@ -206,7 +219,7 @@ trait Transfers
             try {
                 $createPSBT = $api->request('walletcreatefundedpsbt', [
                     'inputs' => $inputs,
-                    'outputs' => [$toAddress => $amount->__toString()],
+                    'outputs' => $outputs,
                     'options' => $funderOptions,
                 ], $wallet->name);
                 $processPSBT = $api->request('walletprocesspsbt', [
@@ -245,6 +258,7 @@ trait Transfers
      * @param  bool  $subtractFeeFromOutputs  Комиссию платит получатель? (false)
      * @param  BitcoinAddress|string|null  $changeAddress  Адрес для сдачи (null - отправитель)
      * @param  string|null  $comment  Комментарий к переводу (не обязательно)
+     * @param  string|null  $data  Данные OP_RETURN в hex, до 80 байт (не обязательно)
      * @return BitcoinTransfer Bitcoin перевод
      * @throws \Exception
      */
@@ -255,7 +269,8 @@ trait Transfers
         int|float|string|BigDecimal|null $amount = null,
         bool $subtractFeeFromOutputs = false,
         BitcoinAddress|string|null $changeAddress = null,
-        string $comment = null,
+        ?string $comment = null,
+        ?string $data = null,
     ): BitcoinTransfer {
         if (!($fromAddress instanceof BitcoinAddress)) {
             $fromAddress = $wallet->addresses()->whereAddress($fromAddress)->firstOrFail();
@@ -273,7 +288,8 @@ trait Transfers
             $toAddress,
             $amount,
             $subtractFeeFromOutputs,
-            $changeAddress
+            $changeAddress,
+            $data
         );
 
         $api = $wallet->node->api();
