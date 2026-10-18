@@ -122,4 +122,10 @@ it('recognizes mainnet address types like validateaddress', function (string $ad
     'ethereum' => ['0x742d35Cc6634C0532925a3b844Bc454e4438f44e', null],
     'tron' => ['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', null],
     'empty' => ['', null],
+    'too long' => [str_repeat('1', 5000), null],
+    'too long bech32' => ['bc1'.str_repeat('q', 200), null],
 ]);
+
+it('refuses to decode an oversized Base58 string', function () {
+    expect(fn () => Base58::decode(str_repeat('z', 10_000)))->toThrow(InvalidArgumentException::class);
+});

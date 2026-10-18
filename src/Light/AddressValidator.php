@@ -16,6 +16,12 @@ class AddressValidator
     {
         $address = trim($address);
 
+        // Bech32 addresses are at most 90 characters, Base58 ones 26–35: anything longer is
+        // rejected before decoding (decoding cost grows with the length)
+        if ($address === '' || strlen($address) > 90) {
+            return null;
+        }
+
         if (preg_match('/^bc1/i', $address)) {
             try {
                 [$version] = Bech32::decodeSegwit('bc', $address);
@@ -24,6 +30,10 @@ class AddressValidator
             }
 
             return $version === 0 ? AddressType::BECH32 : AddressType::BECH32M;
+        }
+
+        if (strlen($address) < 26 || strlen($address) > 35) {
+            return null;
         }
 
         try {

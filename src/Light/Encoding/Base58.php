@@ -24,8 +24,15 @@ class Base58
         return str_repeat('1', $leadingZeros).$encoded;
     }
 
+    /** Longest accepted input: an extended key is 111 characters, an address up to 35 */
+    public const MAX_LENGTH = 128;
+
     public static function decode(string $encoded): string
     {
+        if (strlen($encoded) > self::MAX_LENGTH) {
+            throw new \InvalidArgumentException('Base58 string is too long.');
+        }
+
         $number = gmp_init(0);
 
         for ($i = 0, $length = strlen($encoded); $i < $length; $i++) {
