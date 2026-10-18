@@ -186,6 +186,16 @@ it('creates a light wallet that keeps only the account xpub', function () {
         ->and($wallet->addresses()->where('chain', 1)->where('index', 0)->value('address'))->toBe(CHANGE_0);
 });
 
+it('creates the same light wallet from the BIP39 seed as from the mnemonic', function () {
+    lightSetup();
+    $seed = bin2hex(\ItHealer\LaravelBitcoin\BIP39\BIP39::fromWords(explode(' ', LIGHT_MNEMONIC), \ItHealer\LaravelBitcoin\BIP39\Language\English::getInstance())->generateSeed(''));
+
+    $fromSeed = Bitcoin::createLightWalletFromSeed('w-seed', $seed);
+
+    expect($fromSeed->xpub)->toBe(BitcoinWallet::where('name', 'w1')->value('xpub'))
+        ->and(fn () => Bitcoin::createLightWalletFromSeed('w-bad', 'not-hex'))->toThrow(InvalidArgumentException::class);
+});
+
 it('hands out receive addresses in order and keeps the gap ahead', function () {
     $wallet = lightSetup();
 

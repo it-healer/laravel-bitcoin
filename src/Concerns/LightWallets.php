@@ -29,9 +29,26 @@ trait LightWallets
     ): BitcoinWallet {
         $words = is_array($mnemonic) ? $mnemonic : preg_split('/\s+/', trim($mnemonic));
         $seed = BIP39::fromWords($words, English::getInstance())->generateSeed((string)$passphrase);
-        $path = $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'");
 
-        $xpub = ExtendedKey::fromSeed($seed)->derivePath($path)->neutered()->toXpub();
+        return $this->createLightWalletFromSeed($name, bin2hex($seed), $title, $derivationPath);
+    }
+
+    /**
+     * Light wallet from a BIP39 seed (hex, mnemonic and passphrase already applied). Only the
+     * account xpub is stored.
+     */
+    public function createLightWalletFromSeed(
+        string $name,
+        #[\SensitiveParameter] string $seedHex,
+        ?string $title = null,
+        ?string $derivationPath = null,
+    ): BitcoinWallet {
+        if (!ctype_xdigit($seedHex) || strlen($seedHex) < 32 || strlen($seedHex) > 128 || strlen($seedHex) % 2 !== 0) {
+            throw new \InvalidArgumentException('Seed must be 16-64 bytes in hex.');
+        }
+
+        $path = $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'");
+        $xpub = ExtendedKey::fromSeed(hex2bin($seedHex))->derivePath($path)->neutered()->toXpub();
 
         return $this->createLightWalletFromXpub($name, $xpub, $title, $path);
     }
