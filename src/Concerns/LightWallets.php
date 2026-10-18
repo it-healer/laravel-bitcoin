@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use ItHealer\LaravelBitcoin\BIP39\BIP39;
 use ItHealer\LaravelBitcoin\BIP39\Language\English;
 use ItHealer\LaravelBitcoin\Light\AddressBook;
+use ItHealer\LaravelBitcoin\Light\LightTransfers;
 use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Light\Sync\LightWalletSync;
@@ -111,5 +112,15 @@ trait LightWallets
         }
 
         return true;
+    }
+
+    /**
+     * Recommended fee rates of the network in sat/vB: fastest, half_hour, hour, economy, minimum.
+     *
+     * @return array<string, float>
+     */
+    public function lightFeeRates(): array
+    {
+        return LightTransfers::recommendedFeeRates();
     }
 }

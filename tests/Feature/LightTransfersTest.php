@@ -163,3 +163,9 @@ it('does not broadcast what a compromised signer returns instead of the planned 
         ->and(chainState()->broadcasts)->toBe([])
         ->and($wallet->transfers()->count())->toBe(0);
 });
+
+it('exposes the recommended fee rates', function () {
+    sendSetup();
+
+    expect(Bitcoin::lightFeeRates())->toBe(['fastest' => 20.0, 'half_hour' => 10.0, 'hour' => 5.0, 'economy' => 2.0, 'minimum' => 1.0]);
+});

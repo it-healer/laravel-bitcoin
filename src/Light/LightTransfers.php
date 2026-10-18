@@ -157,13 +157,23 @@ class LightTransfers
         return $spendable;
     }
 
-    protected function feeRate(?float $feeRate): float
+    /**
+     * Recommended fee rates in sat/vB (fastest, half_hour, hour, economy, minimum), cached a minute.
+     *
+     * @return array<string, float>
+     */
+    public static function recommendedFeeRates(): array
     {
-        $rate = $feeRate ?? Cache::remember(
+        return Cache::remember(
             'bitcoin:light:fee-rates',
             60,
             fn (): array => App::make(ProviderPool::class)->call(fn (EsploraApi $api) => $api->feeRates()),
-        )[config('bitcoin.light.fee_rate', 'half_hour')] ?? 2.0;
+        );
+    }
+
+    protected function feeRate(?float $feeRate): float
+    {
+        $rate = $feeRate ?? self::recommendedFeeRates()[config('bitcoin.light.fee_rate', 'half_hour')] ?? 2.0;
 
         $max = (float)config('bitcoin.light.max_fee_rate', 500);
 
