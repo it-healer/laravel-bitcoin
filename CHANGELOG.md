@@ -17,6 +17,16 @@ All notable changes to `laravel-bitcoin` will be documented in this file.
   `active_interval`, others every `idle_interval`): an address costs one request, its history is
   read only when its stats changed; deposits, transfers, confirmations from the tip height,
   dropped mempool transactions, deposit webhooks as before.
+- `Bitcoin::createLightWalletFromSeed($name, $seedHex)` — the same from a BIP39 seed.
+- Birth height: a light wallet stores the chain height it was added at (current tip, or
+  `birthHeight:`), and is not created while no provider answers. Deposits mined at least
+  `history_margin_blocks` (6) before it are history found by the first sync of a restored wallet:
+  recorded without the webhook.
+- Before a deposit webhook the height of every transaction still below the confirmation target is
+  checked again with a provider (reorgs); deposits are claimed for the webhook atomically; one
+  sync of a wallet at a time (lock inside `syncLightWallet`).
+- `Bitcoin::validateAddress()` works without the node (bech32/bech32m, Base58Check, mainnet), the
+  node argument is ignored.
 - Tables `bitcoin_providers`, `bitcoin_transactions`; light-mode columns on `bitcoin_wallets` and
   `bitcoin_addresses` (migrations — publish and run them).
 
