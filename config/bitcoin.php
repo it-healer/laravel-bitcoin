@@ -88,7 +88,7 @@ return [
         'active_interval' => 60,
         'idle_interval' => 600,
         'tip_cache_seconds' => 30,
-        'request_pause_ms' => 100,
+        'request_pause_ms' => 250,
         'cooldown_seconds' => 60,
         'dropped_after' => 1800,
         'timeout' => 20,

@@ -238,7 +238,7 @@ class LightWalletSync extends BaseConsole
                 /** @var BitcoinAddress $address */
                 $address = $own->get($to);
 
-                Bitcoin::getModelDeposit()::query()->updateOrCreate(
+                $deposit = Bitcoin::getModelDeposit()::query()->updateOrCreate(
                     ['address_id' => $address->id, 'txid' => $txid],
                     [
                         'wallet_id' => $this->wallet->id,
@@ -248,6 +248,12 @@ class LightWalletSync extends BaseConsole
                         'time_at' => $transaction->time_at,
                     ],
                 );
+
+                // History mined before the wallet appeared here (first sync of a restored wallet)
+                // is recorded without the webhook: no "received" push or merchant call for old money
+                if ($deposit->wasRecentlyCreated && $time && $time->lt($this->wallet->created_at)) {
+                    $deposit->update(['webhook_status' => 2, 'webhook_data' => ['skipped' => 'mined before the wallet was added']]);
+                }
             }
         }
 

@@ -148,7 +148,11 @@ function lightSetup(): BitcoinWallet
     BitcoinProvider::create(['name' => 'mempool', 'base_url' => 'https://mempool.test/api', 'priority' => 1]);
     BitcoinProvider::create(['name' => 'blockstream', 'base_url' => 'https://blockstream.test/api', 'priority' => 2]);
 
-    return Bitcoin::createLightWallet('w1', LIGHT_MNEMONIC);
+    $wallet = Bitcoin::createLightWallet('w1', LIGHT_MNEMONIC);
+    // added long ago: transactions of the fake chain (block time 2025) count as new money
+    $wallet->forceFill(['created_at' => now()->subYears(10)])->save();
+
+    return $wallet;
 }
 
 function syncWallet(BitcoinWallet $wallet, bool $full = false): BitcoinWallet
@@ -247,6 +251,31 @@ it('shows an unconfirmed deposit, then confirms it and calls the webhook once', 
     expect($deposit->fresh()->confirmations)->toBe(3)
         ->and($deposit->fresh()->webhook_status)->toBe(2)
         ->and(chainState()->handled)->toBe([$deposit->id]);
+});
+
+it('records history from before the wallet was added without calling the webhook', function () {
+    $wallet = lightSetup();
+    config()->set('bitcoin.webhook.handler', SpyBitcoinWebhook::class);
+    config()->set('bitcoin.webhook.confirmations', 1);
+    $wallet->forceFill(['created_at' => \Illuminate\Support\Carbon::createFromTimestamp(1_760_000_100)])->save();
+
+    // block_time of addTx is 1 760 000 000 — before the wallet; the second one comes later
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_000);
+    $wallet = syncWallet($wallet, full: true);
+
+    $old = Deposit::sole();
+    expect($old->webhook_status)->toBe(2)
+        ->and($old->webhook_data['skipped'] ?? null)->not->toBeNull()
+        ->and(chainState()->handled)->toBe([]);
+
+    addTx(str_repeat('b', 64), [[STRANGER, 150_000]], [[RECEIVE_1, 50_000]]);
+    $txs = chainState()->txs;
+    $txs[str_repeat('b', 64)]['status'] = ['confirmed' => true, 'block_height' => 900_000, 'block_time' => 1_760_000_200];
+    chainState()->txs = $txs;
+    syncWallet($wallet, full: true);
+
+    $new = Deposit::where('txid', str_repeat('b', 64))->sole();
+    expect(chainState()->handled)->toBe([$new->id]);
 });
 
 it('does not read the history of an address whose stats did not change', function () {
