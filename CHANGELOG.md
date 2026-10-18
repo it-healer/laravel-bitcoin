@@ -2,6 +2,29 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.3.0 - unreleased
+
+### Added
+
+- Sending from light wallets: `previewPSBT`/`sendPSBT`/`previewMassPSBT`/`sendMassPSBT` work in the
+  light mode with the same semantics (coins of one address, change back to it, OP_RETURN after the
+  change, «send all»), new named arguments `seedHex:` and `feeRate:` (sat/vB, default — the
+  provider's `half_hour` recommendation, `max_fee_rate` cap). Coins: largest first, change below
+  dust goes to the fee, RBF on every input; confirmed coins and own unconfirmed change only.
+- `signer/`: a Node signer on `@scure/btc-signer` bundled into one file (`signer/dist/sign.mjs`,
+  no `npm install` on the server). It gets the PSBT and the BIP39 seed through stdin, signs only
+  P2WPKH inputs of that seed and refuses the rest. PHP then checks the result independently: same
+  txid, inputs and outputs as planned, and a valid BIP143 signature of the owning key on every
+  input — only then it is broadcast to every provider.
+- Coins are reserved before the broadcast; when the broadcast fails the txid is looked up, a known
+  transaction is recorded as sent, otherwise the coins stay reserved for `failed_reserve_minutes`.
+- `bumpLightFee()`: speed up an unconfirmed send (RBF) from its change, built only from raw
+  transactions whose txid is checked and whose recipients match the recorded transfers.
+- `lightFeeRates()`, `lightTransactionStatus()`, `xpubFromSeed()`, `convertToLight()` (move a node
+  wallet to the light mode by its xpub, keeping addresses, deposits and transfers).
+- Addresses of a wallet that has not had its first full sync are checked one by one before being
+  handed out, so an address with history is never issued again.
+
 ## v2.2.0 - 2026-10-18
 
 ### Added

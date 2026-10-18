@@ -131,6 +131,14 @@ $address = Bitcoin::createAddress($wallet, title: 'Order #1');            // nex
 Bitcoin::syncLightWallet($wallet, full: true);                            // first sync: also the gap
 ```
 
+Sending (the server signs with the bundled Node signer, `node` must be in PATH):
+
+```php
+Bitcoin::sendMassPSBT($wallet, $address, [['address' => 'bc1q…', 'amount' => '0.001']], seedHex: $seedHex, feeRate: 5);
+Bitcoin::bumpLightFee($wallet, $txid, feeRate: 20, seedHex: $seedHex); // RBF
+Bitcoin::convertToLight($nodeWallet, Bitcoin::xpubFromSeed($seedHex));  // leave the node mode
+```
+
 Schedule `bitcoin:light-sync` every minute. Settings — `config('bitcoin.light')`: derivation
 path, gap limit, sync intervals, provider cooldown, request pause.
 
