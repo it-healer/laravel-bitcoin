@@ -169,3 +169,32 @@ it('exposes the recommended fee rates', function () {
 
     expect(Bitcoin::lightFeeRates())->toBe(['fastest' => 20.0, 'half_hour' => 10.0, 'hour' => 5.0, 'economy' => 2.0, 'minimum' => 1.0]);
 });
+
+it('records the send when the broadcast answer was lost but a provider has the transaction', function () {
+    $wallet = sendSetup();
+    fundReceive0(100_000);
+    chainState()['broadcast'] = 'lost';
+
+    $transfers = Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0005']], seedHex: transferSeed());
+
+    expect($transfers)->toHaveCount(1)
+        ->and($wallet->transactions()->where('txid', $transfers[0]->txid)->exists())->toBeTrue()
+        ->and(fn () => Bitcoin::previewMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0001']]))
+        ->toThrow(RuntimeException::class); // the only coin is reserved
+});
+
+it('keeps the coins reserved for a while after a rejected broadcast, then frees them', function () {
+    $wallet = sendSetup();
+    fundReceive0(100_000);
+    chainState()['broadcast'] = 'rejected';
+
+    expect(fn () => Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0005']], seedHex: transferSeed()))
+        ->toThrow(RuntimeException::class, 'not accepted')
+        ->and($wallet->transfers()->count())->toBe(0)
+        ->and(fn () => Bitcoin::previewMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0001']]))
+        ->toThrow(RuntimeException::class);
+
+    $this->travel(11)->minutes();
+
+    expect(Bitcoin::previewMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0001']])['beforeBalance'])->toBe('0.00100000');
+});

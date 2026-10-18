@@ -111,9 +111,20 @@ class LightTransfers
             $plan = $preview['plan'];
 
             $signed = Signer::sign($plan, $seedHex);
-            App::make(ProviderPool::class)->broadcast($signed['hex'], $plan['txid']);
 
-            $this->reserve($plan['inputs']);
+            // Reserved before the broadcast: a provider may accept it even when the answer is lost
+            $this->reserve($plan['inputs'], now()->addHours((int)config('bitcoin.light.reserve_hours', 6)));
+
+            try {
+                App::make(ProviderPool::class)->broadcast($signed['hex'], $plan['txid']);
+            } catch (\RuntimeException $e) {
+                if (!$this->isKnown($plan['txid'])) {
+                    // Most likely not sent; the coins stay reserved a little longer in case it was
+                    $this->reserve($plan['inputs'], now()->addMinutes((int)config('bitcoin.light.failed_reserve_minutes', 10)));
+
+                    throw $e;
+                }
+            }
 
             return $this->record($from, $preview, $plan);
         });
@@ -137,7 +148,7 @@ class LightTransfers
         }
 
         $utxos = App::make(ProviderPool::class)->call(fn (EsploraApi $api) => $api->addressUtxos($from->address));
-        $reserved = Cache::get($this->reserveKey(), []);
+        $reserved = $this->reserved();
         $own = $this->wallet->transactions()->whereIn('direction', ['out', 'self'])->whereNull('dropped_at')->pluck('txid')->flip();
         $script = Script::forAddress($from->address);
         $path = rtrim((string)$this->wallet->derivation_path, '/').'/'.$from->chain.'/'.$from->index;
@@ -185,17 +196,41 @@ class LightTransfers
     }
 
     /**
+     * Reserves the outputs until `$until` (each output has its own expiry).
+     *
      * @param list<array{txid: string, vout: int}> $inputs
      */
-    protected function reserve(array $inputs): void
+    protected function reserve(array $inputs, \DateTimeInterface $until): void
     {
-        $reserved = Cache::get($this->reserveKey(), []);
+        $reserved = $this->reserved();
 
         foreach ($inputs as $input) {
-            $reserved[$input['txid'].':'.$input['vout']] = true;
+            $reserved[$input['txid'].':'.$input['vout']] = $until->getTimestamp();
         }
 
         Cache::put($this->reserveKey(), $reserved, now()->addHours((int)config('bitcoin.light.reserve_hours', 6)));
+    }
+
+    /**
+     * @return array<string, int> outpoint => expiry timestamp, expired ones dropped
+     */
+    protected function reserved(): array
+    {
+        $now = Date::now()->getTimestamp();
+
+        return array_filter((array)Cache::get($this->reserveKey(), []), fn ($until) => is_int($until) && $until > $now);
+    }
+
+    /**
+     * Whether any provider knows the transaction (in the mempool or mined).
+     */
+    protected function isKnown(string $txid): bool
+    {
+        try {
+            return App::make(ProviderPool::class)->call(fn (EsploraApi $api) => $api->transactionStatus($txid)) !== null;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

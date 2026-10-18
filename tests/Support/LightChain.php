@@ -135,6 +135,20 @@ function fakeEsplora(): void
             $path === 'tx' && $request->method() === 'POST' => (function () use ($request, $host) {
                 chainState()->broadcasts = [...chainState()->broadcasts, ['host' => $host, 'hex' => $request->body()]];
 
+                // 'lost': accepted, but the answer never arrives; 'rejected': refused
+                if (($mode = chainState()['broadcast'] ?? null) !== null) {
+                    if ($mode === 'lost') {
+                        $txid = \ItHealer\LaravelBitcoin\Light\Tx\Transaction::fromHex($request->body())->txid();
+                        $txs = chainState()->txs;
+                        $txs[$txid] = ['txid' => $txid, 'vin' => [], 'vout' => [], 'fee' => 0, 'status' => ['confirmed' => false]];
+                        chainState()->txs = $txs;
+
+                        return Http::response('Gateway Timeout', 504);
+                    }
+
+                    return Http::response('sendrawtransaction RPC error: bad-txns-inputs-missingorspent', 400);
+                }
+
                 return Http::response(ctype_xdigit($request->body()) && strlen($request->body()) > 120
                     ? \ItHealer\LaravelBitcoin\Light\Tx\Transaction::fromHex($request->body())->txid()
                     : hash('sha256', $request->body()));

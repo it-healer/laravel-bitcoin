@@ -106,6 +106,7 @@ return [
         'fee_rate' => 'half_hour',
         'max_fee_rate' => 500,
         'reserve_hours' => 6,
+        'failed_reserve_minutes' => 10,
         'signer_command' => null,
     ],
 ];
