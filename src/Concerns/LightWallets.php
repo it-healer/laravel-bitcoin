@@ -57,13 +57,24 @@ trait LightWallets
 
     /**
      * Light wallet from an account xpub (or zpub). Without the mnemonic it can receive and
-     * show funds; sending needs the mnemonic at signing time.
+     * show funds; sending needs the mnemonic at signing time. `$birthHeight` — chain height
+     * the wallet starts from: deposits mined well before it are history without webhooks
+     * (current tip by default, 0 — nothing is history).
      */
-    public function createLightWalletFromXpub(string $name, string $xpub, ?string $title = null, ?string $derivationPath = null): BitcoinWallet
-    {
+    public function createLightWalletFromXpub(
+        string $name,
+        string $xpub,
+        ?string $title = null,
+        ?string $derivationPath = null,
+        ?int $birthHeight = null,
+    ): BitcoinWallet {
         $account = ExtendedKey::fromPublicString($xpub);
 
-        return DB::transaction(function () use ($name, $account, $title, $derivationPath): BitcoinWallet {
+        // Without the birth height the first sync could not tell old history from new money:
+        // the wallet is not created when no provider answers (ProviderException)
+        $birthHeight ??= App::make(ProviderPool::class)->tipHeight();
+
+        return DB::transaction(function () use ($name, $account, $title, $derivationPath, $birthHeight): BitcoinWallet {
             /** @var BitcoinWallet $wallet */
             $wallet = $this->getModelWallet()::query()->create([
                 'mode' => 'light',
@@ -71,7 +82,7 @@ trait LightWallets
                 'title' => $title,
                 'xpub' => $account->toXpub(),
                 'derivation_path' => $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'"),
-                'birth_height' => $this->currentHeight(),
+                'birth_height' => $birthHeight,
             ]);
 
             (new AddressBook($wallet))->ensureGap();
@@ -100,19 +111,5 @@ trait LightWallets
         }
 
         return true;
-    }
-
-    /**
-     * Chain height when the wallet is added: deposits mined well before it are history found by
-     * the first sync of a restored wallet, not new money. Null when no provider answers — then
-     * nothing is treated as history.
-     */
-    protected function currentHeight(): ?int
-    {
-        try {
-            return App::make(ProviderPool::class)->tipHeight();
-        } catch (\Throwable) {
-            return null;
-        }
     }
 }

@@ -297,10 +297,13 @@ it('stores the chain height when a wallet is created', function () {
 
     expect(Bitcoin::createLightWalletFromXpub('w2', BIP84_TEST_XPUB)->birth_height)->toBe(912_345);
 
+    expect(Bitcoin::createLightWalletFromXpub('w3', BIP84_TEST_XPUB, birthHeight: 0)->birth_height)->toBe(0);
+
     chainState()->down = ['mempool.test', 'blockstream.test'];
     \Illuminate\Support\Facades\Cache::flush();
 
-    expect(Bitcoin::createLightWalletFromXpub('w3', BIP84_TEST_XPUB)->birth_height)->toBeNull();
+    expect(fn () => Bitcoin::createLightWalletFromXpub('w4', BIP84_TEST_XPUB))->toThrow(ProviderException::class)
+        ->and(BitcoinWallet::where('name', 'w4')->exists())->toBeFalse();
 });
 
 it('does not read the history of an address whose stats did not change', function () {
