@@ -380,6 +380,88 @@ it('keeps a pending transaction that is merely unseen for a short while', functi
     expect(Deposit::where('txid', str_repeat('a', 64))->exists())->toBeTrue();
 });
 
+/* ---------- Reorgs and concurrency ---------- */
+
+it('clears the height of a deposit whose block was reorganized away and holds the webhook', function () {
+    $wallet = lightSetup();
+    Bitcoin::createAddress($wallet);
+    config()->set('bitcoin.webhook.handler', SpyBitcoinWebhook::class);
+    config()->set('bitcoin.webhook.confirmations', 3);
+
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 900_000);
+    syncWallet($wallet);
+    expect(Deposit::sole()->confirmations)->toBe(1);
+
+    // reorg: the transaction is back in the mempool, while the tip keeps growing
+    $txs = chainState()->txs;
+    $txs[str_repeat('a', 64)]['status'] = ['confirmed' => false];
+    chainState()->txs = $txs;
+    chainState()->tip = 900_005;
+    \Illuminate\Support\Facades\Cache::flush();
+    syncWallet($wallet);
+
+    expect(Deposit::sole()->block_height)->toBeNull()
+        ->and(Deposit::sole()->confirmations)->toBe(0)
+        ->and($wallet->transactions()->sole()->block_height)->toBeNull()
+        ->and(chainState()->handled)->toBe([]);
+
+    // mined again in another block
+    confirmTx(str_repeat('a', 64), 900_004);
+    \Illuminate\Support\Facades\Cache::flush();
+    syncWallet($wallet);
+
+    expect(Deposit::sole()->block_height)->toBe(900_004)
+        ->and(Deposit::sole()->confirmations)->toBe(2);
+});
+
+it('updates the height of a deposit that moved to another block', function () {
+    $wallet = lightSetup();
+    Bitcoin::createAddress($wallet);
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_998);
+    syncWallet($wallet);
+
+    confirmTx(str_repeat('a', 64), 899_999);
+    syncWallet($wallet);
+
+    expect(Deposit::sole()->block_height)->toBe(899_999)
+        ->and(Deposit::sole()->confirmations)->toBe(2);
+});
+
+it('calls the webhook of a deposit claimed by another run only once', function () {
+    $wallet = lightSetup();
+    Bitcoin::createAddress($wallet);
+    config()->set('bitcoin.webhook.handler', SpyBitcoinWebhook::class);
+    config()->set('bitcoin.webhook.confirmations', 1);
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_000);
+
+    // another run claims the deposit between our query and our claim
+    Deposit::retrieved(function (Deposit $deposit) {
+        if ($deposit->webhook_status === 0 && chainState()->handled === [] && !isset(chainState()->raced)) {
+            chainState()->raced = true;
+            Deposit::query()->whereKey($deposit->id)->update(['webhook_status' => 1]);
+        }
+    });
+
+    syncWallet($wallet);
+    Deposit::flushEventListeners();
+
+    expect(chainState()->handled)->toBe([])
+        ->and(Deposit::sole()->webhook_status)->toBe(1);
+});
+
+it('skips a sync of a wallet that is already syncing', function () {
+    $wallet = lightSetup();
+    $lock = \Illuminate\Support\Facades\Cache::lock('bitcoin:light-sync:'.$wallet->id, 60);
+    $lock->get();
+
+    expect(Bitcoin::syncLightWallet($wallet))->toBeFalse()
+        ->and($wallet->fresh()->sync_at)->toBeNull();
+
+    $lock->release();
+
+    expect(Bitcoin::syncLightWallet($wallet))->toBeTrue();
+});
+
 /* ---------- History pages ---------- */
 
 it('reads older history pages until a known confirmed transaction', function () {

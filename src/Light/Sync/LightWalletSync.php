@@ -309,17 +309,42 @@ class LightWalletSync extends BaseConsole
     }
 
     /**
-     * Confirmations from the tip height for everything mined that is still counting.
+     * Confirmations of everything mined that is still below the target. The height of each such
+     * transaction is checked again with a provider first: after a reorg it may be back in the
+     * mempool (height cleared, confirmations 0) or in another block (height updated), so a
+     * deposit never reaches the webhook on a stale height.
      */
     protected function updateConfirmations(): void
     {
         $target = max(6, (int)config('bitcoin.webhook.confirmations', 6));
+        $queries = fn () => [$this->wallet->deposits(), $this->wallet->transfers()];
 
-        foreach ([$this->wallet->deposits(), $this->wallet->transfers()] as $query) {
-            $query->whereNotNull('block_height')
-                ->where('confirmations', '<', $target + 1)
+        $txids = collect($queries())
+            ->flatMap(fn ($query) => $query->whereNotNull('block_height')->where('confirmations', '<', $target)->pluck('txid'))
+            ->unique();
+
+        foreach ($txids as $txid) {
+            $status = $this->pool->call(fn (EsploraApi $api) => $api->transactionStatus($txid));
+            $height = ($status['confirmed'] ?? false) ? (int)$status['block_height'] : null;
+
+            foreach ([...$queries(), $this->wallet->transactions()] as $query) {
+                $query->where('txid', $txid)
+                    ->where(fn ($q) => $q->whereNull('block_height')->orWhere('block_height', '!=', $height ?? -1))
+                    ->get()
+                    ->each(fn ($row) => $row->update(['block_height' => $height]));
+            }
+
+            if ($height === null) {
+                $this->log('Transaction '.$txid.' is no longer confirmed (reorg), waiting for it again.');
+            }
+        }
+
+        foreach ($queries() as $query) {
+            $query->where('confirmations', '<', $target + 1)
                 ->get()
-                ->each(fn ($row) => $row->update(['confirmations' => max(0, $this->tip - (int)$row->block_height + 1)]));
+                ->each(fn ($row) => $row->update([
+                    'confirmations' => $row->block_height ? max(0, $this->tip - (int)$row->block_height + 1) : 0,
+                ]));
         }
     }
 
@@ -353,7 +378,17 @@ class LightWalletSync extends BaseConsole
             ->orderBy('created_at')
             ->get()
             ->each(function (BitcoinDeposit $deposit) use ($handler): void {
-                $deposit->update(['webhook_status' => 1, 'webhook_data' => ['start_at' => Date::now()]]);
+                // Claimed with a conditional UPDATE: of two concurrent runs only one calls the handler
+                $claimed = $deposit->newQuery()
+                    ->whereKey($deposit->getKey())
+                    ->where('webhook_status', 0)
+                    ->update(['webhook_status' => 1, 'webhook_data' => json_encode(['start_at' => Date::now()])]);
+
+                if ($claimed !== 1) {
+                    return;
+                }
+
+                $deposit->refresh();
 
                 try {
                     $deposit->update([

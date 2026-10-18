@@ -3,7 +3,6 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -27,19 +26,16 @@ class BitcoinLightSyncCommand extends Command
             : $model::query()->where('mode', 'light')->get()->filter(fn (BitcoinWallet $wallet) => $this->isDue($wallet));
 
         foreach ($wallets as $wallet) {
-            // One sync of a wallet at a time: a slow run must not overlap the next minute's one
-            Cache::lock('bitcoin:light-sync:'.$wallet->id, 300)->get(function () use ($wallet): void {
-                try {
-                    Bitcoin::syncLightWallet(
-                        $wallet,
-                        (bool)$this->option('full'),
-                        fn (string $message, ?string $type) => $this->{$type ? ($type === 'success' ? 'info' : $type) : 'line'}($message),
-                    );
-                    $this->info('Bitcoin wallet '.$wallet->name.' synced.');
-                } catch (\Throwable $e) {
-                    $this->error('Bitcoin wallet '.$wallet->name.': '.$e->getMessage());
-                }
-            });
+            try {
+                $synced = Bitcoin::syncLightWallet(
+                    $wallet,
+                    (bool)$this->option('full'),
+                    fn (string $message, ?string $type) => $this->{$type ? ($type === 'success' ? 'info' : $type) : 'line'}($message),
+                );
+                $this->info('Bitcoin wallet '.$wallet->name.($synced ? ' synced.' : ' is already syncing, skipped.'));
+            } catch (\Throwable $e) {
+                $this->error('Bitcoin wallet '.$wallet->name.': '.$e->getMessage());
+            }
         }
 
         return self::SUCCESS;

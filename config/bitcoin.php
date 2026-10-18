@@ -92,5 +92,7 @@ return [
         'cooldown_seconds' => 60,
         'dropped_after' => 1800,
         'timeout' => 20,
+        // A wallet sync holds a lock this long at most (a full sync of a busy wallet takes minutes)
+        'lock_seconds' => 900,
     ],
 ];

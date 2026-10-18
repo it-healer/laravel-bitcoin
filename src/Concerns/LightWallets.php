@@ -2,6 +2,7 @@
 
 namespace ItHealer\LaravelBitcoin\Concerns;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use ItHealer\LaravelBitcoin\BIP39\BIP39;
 use ItHealer\LaravelBitcoin\BIP39\Language\English;
@@ -61,10 +62,23 @@ trait LightWallets
 
     /**
      * Reads balances and history from the providers. `$full` also checks the hidden gap
-     * addresses (first sync, restore from mnemonic).
+     * addresses (first sync, restore from mnemonic). One sync of a wallet at a time: returns
+     * false without syncing when another one is running.
      */
-    public function syncLightWallet(BitcoinWallet $wallet, bool $full = false, ?\Closure $logger = null): void
+    public function syncLightWallet(BitcoinWallet $wallet, bool $full = false, ?\Closure $logger = null): bool
     {
-        (new LightWalletSync($wallet, $full))->setLogger($logger)->run();
+        $lock = Cache::lock('bitcoin:light-sync:'.$wallet->getKey(), (int)config('bitcoin.light.lock_seconds', 900));
+
+        if (!$lock->get()) {
+            return false;
+        }
+
+        try {
+            (new LightWalletSync($wallet, $full))->setLogger($logger)->run();
+        } finally {
+            $lock->release();
+        }
+
+        return true;
     }
 }
