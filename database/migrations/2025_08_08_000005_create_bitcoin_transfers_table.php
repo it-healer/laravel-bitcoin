@@ -29,7 +29,7 @@ return new class extends Migration {
             $table->timestamp('time_at');
             $table->timestamps();
 
-            $table->unique(['address_id', 'txid', 'receiver_address'], 'unique_index');
+            $table->unique(['address_id', 'txid', 'receiver_address'], 'bitcoin_transfers_unique_index');
         });
     }
 

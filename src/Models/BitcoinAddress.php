@@ -15,10 +15,15 @@ class BitcoinAddress extends Model
         'wallet_id',
         'address',
         'type',
+        'chain',
+        'index',
+        'issued_at',
         'title',
         'sync_at',
         'balance',
         'unconfirmed_balance',
+        'stats_hash',
+        'tx_count',
         'available',
     ];
 
@@ -28,6 +33,10 @@ class BitcoinAddress extends Model
         'balance' => BigDecimalCast::class,
         'unconfirmed_balance' => BigDecimalCast::class,
         'available' => 'boolean',
+        'chain' => 'integer',
+        'index' => 'integer',
+        'issued_at' => 'datetime',
+        'tx_count' => 'integer',
     ];
 
     public function wallet(): BelongsTo

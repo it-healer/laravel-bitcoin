@@ -8,6 +8,7 @@ use ItHealer\LaravelBitcoin\Commands\ElectrumCommand;
 use ItHealer\LaravelBitcoin\Commands\ElectrumInstallCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinNodeSyncCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinCronCommand;
+use ItHealer\LaravelBitcoin\Commands\BitcoinLightSyncCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinWalletSyncCommand;
 use ItHealer\LaravelBitcoin\Commands\BitcoinWebhookCommand;
 use ItHealer\LaravelBitcoin\Commands\ElectrumNodeSyncCommand;
@@ -29,6 +30,7 @@ class BitcoinServiceProvider extends PackageServiceProvider
                 BitcoinCronCommand::class,
                 BitcoinWalletSyncCommand::class,
                 BitcoinWebhookCommand::class,
+                BitcoinLightSyncCommand::class,
 
                 ElectrumCommand::class,
                 ElectrumInstallCommand::class,

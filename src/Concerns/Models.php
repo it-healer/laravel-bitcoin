@@ -8,6 +8,8 @@ use ItHealer\LaravelBitcoin\Models\BitcoinDeposit;
 use ItHealer\LaravelBitcoin\Models\BitcoinTransfer;
 use ItHealer\LaravelBitcoin\Models\ElectrumNode;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
+use ItHealer\LaravelBitcoin\Models\BitcoinProvider;
+use ItHealer\LaravelBitcoin\Models\BitcoinTransaction;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 trait Models
@@ -66,5 +68,21 @@ trait Models
     public function getModelAPI(): string
     {
         return config('bitcoin.models.rpc_client');
+    }
+
+    /**
+     * @return class-string<BitcoinProvider>
+     */
+    public function getModelProvider(): string
+    {
+        return config('bitcoin.models.provider', BitcoinProvider::class);
+    }
+
+    /**
+     * @return class-string<BitcoinTransaction>
+     */
+    public function getModelTransaction(): string
+    {
+        return config('bitcoin.models.transaction', BitcoinTransaction::class);
     }
 }

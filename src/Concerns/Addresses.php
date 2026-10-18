@@ -2,6 +2,7 @@
 
 namespace ItHealer\LaravelBitcoin\Concerns;
 
+use ItHealer\LaravelBitcoin\Light\AddressBook;
 use ItHealer\LaravelBitcoin\Enums\AddressType;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
@@ -14,6 +15,10 @@ trait Addresses
         ?AddressType $type = null,
         ?string $title = null
     ): BitcoinAddress {
+        if ($wallet->isLight()) {
+            return (new AddressBook($wallet))->issueReceiveAddress($title);
+        }
+
         $api = $wallet->node->api();
 
         if (!$type) {

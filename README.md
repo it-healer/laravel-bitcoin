@@ -114,6 +114,26 @@ $schedule->command('bitcoin:cron')
     ->runInBackground();
 ```
 
+## Light mode (no node)
+
+A light wallet keeps only the account xpub; addresses are derived in PHP and data comes from
+public Esplora APIs, like Electrum or Sparrow without an own server.
+
+```php
+use ItHealer\LaravelBitcoin\Facades\Bitcoin;
+use ItHealer\LaravelBitcoin\Models\BitcoinProvider;
+
+BitcoinProvider::create(['name' => 'mempool', 'base_url' => 'https://mempool.space/api', 'priority' => 1]);
+BitcoinProvider::create(['name' => 'blockstream', 'base_url' => 'https://blockstream.info/api', 'priority' => 2]);
+
+$wallet = Bitcoin::createLightWallet('my-wallet', $mnemonic, $passphrase); // stores only the xpub
+$address = Bitcoin::createAddress($wallet, title: 'Order #1');            // next receive address
+Bitcoin::syncLightWallet($wallet, full: true);                            // first sync: also the gap
+```
+
+Schedule `bitcoin:light-sync` every minute. Settings — `config('bitcoin.light')`: derivation
+path, gap limit, sync intervals, provider cooldown, request pause.
+
 ## Electrum
 
 Для установки приложения Electrum установите на сервер зависимости
