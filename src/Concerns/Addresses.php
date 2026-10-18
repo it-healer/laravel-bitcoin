@@ -3,6 +3,7 @@
 namespace ItHealer\LaravelBitcoin\Concerns;
 
 use ItHealer\LaravelBitcoin\Light\AddressBook;
+use ItHealer\LaravelBitcoin\Light\AddressValidator;
 use ItHealer\LaravelBitcoin\Enums\AddressType;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinNode;
@@ -44,23 +45,12 @@ trait Addresses
         ]);
     }
 
-    public function validateAddress(BitcoinNode $node, string $address): ?AddressType
+    /**
+     * Address type, or null for an invalid mainnet address. Checked locally, the node is not
+     * needed any more (the argument is kept for compatibility).
+     */
+    public function validateAddress(?BitcoinNode $node, string $address): ?AddressType
     {
-        $validateAddress = $node->api()->request('validateaddress', [
-            'address' => $address
-        ]);
-
-        if (!($validateAddress['isvalid'] ?? false)) {
-            return null;
-        }
-
-        if ($validateAddress['iswitness'] ?? false) {
-            return ($validateAddress['witness_version'] ?? false) ? AddressType::BECH32M : AddressType::BECH32;
-        }
-        if ($validateAddress['isscript'] ?? false) {
-            return AddressType::P2SH_SEGWIT;
-        }
-
-        return AddressType::LEGACY;
+        return AddressValidator::type($address);
     }
 }

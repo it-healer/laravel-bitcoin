@@ -105,3 +105,21 @@ it('keeps leading zero bytes in Base58Check', function () {
 
     expect(Base58::decodeCheck(Base58::encodeCheck($payload)))->toBe($payload);
 });
+
+/* ---------- Address validation without a node ---------- */
+
+it('recognizes mainnet address types like validateaddress', function (string $address, ?string $type) {
+    expect(\ItHealer\LaravelBitcoin\Light\AddressValidator::type($address)?->value)->toBe($type);
+})->with([
+    'p2pkh' => ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'legacy'],
+    'p2sh' => ['3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', 'p2wpkh-p2sh'],
+    'p2wpkh' => ['bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', 'bech32'],
+    'p2wpkh upper case' => ['BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4', 'bech32'],
+    'p2tr' => ['bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0', 'bech32m'],
+    'p2pkh bad checksum' => ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3', null],
+    'testnet p2pkh' => ['mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn', null],
+    'testnet bech32' => ['tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', null],
+    'ethereum' => ['0x742d35Cc6634C0532925a3b844Bc454e4438f44e', null],
+    'tron' => ['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', null],
+    'empty' => ['', null],
+]);
