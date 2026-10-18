@@ -56,6 +56,35 @@ class Script
         };
     }
 
+    /**
+     * Mainnet address of a standard output script, null for OP_RETURN or a non-standard one.
+     */
+    public static function toAddress(string $script): ?string
+    {
+        $length = strlen($script);
+
+        if ($length === 25 && str_starts_with($script, "\x76\xa9\x14") && str_ends_with($script, "\x88\xac")) {
+            return Base58::encodeCheck("\x00".substr($script, 3, 20));
+        }
+
+        if ($length === 23 && str_starts_with($script, "\xa9\x14") && $script[22] === "\x87") {
+            return Base58::encodeCheck("\x05".substr($script, 2, 20));
+        }
+
+        $version = ord($script[0] ?? "\xff");
+        $program = substr($script, 2);
+
+        if ($length >= 4 && ($version === 0 || ($version >= 0x51 && $version <= 0x60)) && ord($script[1]) === strlen($program) && strlen($program) >= 2 && strlen($program) <= 40) {
+            try {
+                return Bech32::encodeSegwit('bc', $version === 0 ? 0 : $version - 0x50, $program);
+            } catch (\InvalidArgumentException) {
+                return null;
+            }
+        }
+
+        return null;
+    }
+
     public static function opReturn(string $data): string
     {
         if (strlen($data) > 80) {

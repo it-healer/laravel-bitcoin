@@ -145,39 +145,67 @@ class LightTransfers
             throw new \RuntimeException('Speeding up a transaction needs the wallet seed to sign.');
         }
 
-        return Cache::lock('bitcoin:light-send:'.$this->wallet->getKey(), 120)->block(15, function () use ($txid, $feeRate, $seedHex): array {
-            $pool = App::make(ProviderPool::class);
-            $tx = $pool->call(fn (EsploraApi $api) => $api->transaction($txid));
+        $txid = strtolower($txid);
 
-            if ($tx['status']['confirmed'] ?? false) {
+        if (!preg_match('/^[0-9a-f]{64}$/', $txid)) {
+            throw new \InvalidArgumentException('Invalid txid.');
+        }
+
+        // Only a transaction this wallet sent, with its recipients recorded here
+        $transfers = $this->wallet->transfers()->where('txid', $txid)->get();
+        $record = $this->wallet->transactions()->where('txid', $txid)->whereIn('direction', ['out', 'self'])->first();
+
+        if (!$record || $transfers->isEmpty()) {
+            throw new \RuntimeException('Only a transaction sent from this wallet can be sped up.');
+        }
+
+        $maxRate = (float)config('bitcoin.light.max_fee_rate', 500);
+
+        if ($feeRate > $maxRate) {
+            throw new \RuntimeException('Fee rate '.$feeRate.' sat/vB is above the limit of '.$maxRate.' sat/vB.');
+        }
+
+        return Cache::lock('bitcoin:light-send:'.$this->wallet->getKey(), 120)->block(15, function () use ($txid, $feeRate, $seedHex, $transfers, $record, $maxRate): array {
+            $pool = App::make(ProviderPool::class);
+
+            if ($pool->call(fn (EsploraApi $api) => $api->transactionStatus($txid))['confirmed'] ?? false) {
                 throw new \RuntimeException('The transaction is already confirmed.');
             }
 
+            // Everything below comes from raw transactions whose txid is checked here: a provider
+            // cannot change inputs, outputs or amounts without changing the txid
+            $original = $this->verifiedTransaction($txid);
             $own = $this->wallet->addresses()->get()->keyBy('address');
             $inputs = [];
 
-            foreach ($tx['vin'] as $vin) {
-                $address = $own->get($vin['prevout']['scriptpubkey_address'] ?? '');
+            foreach ($original->inputs as $input) {
+                $previous = $this->verifiedTransaction($input['txid'])->outputs[$input['vout']] ?? null;
+                $address = $previous ? $own->get((string)Script::toAddress($previous['script'])) : null;
 
-                if (!$address || $address->chain === null || ($vin['sequence'] ?? 0xffffffff) >= 0xfffffffe) {
+                if (!$address || $address->chain === null || $input['sequence'] >= 0xfffffffe) {
                     throw new \RuntimeException('Only an RBF transaction spending this wallet\'s coins can be sped up.');
                 }
 
                 $inputs[] = [
-                    'txid' => $vin['txid'],
-                    'vout' => (int)$vin['vout'],
-                    'value' => (int)$vin['prevout']['value'],
-                    'script' => hex2bin($vin['prevout']['scriptpubkey']),
+                    'txid' => $input['txid'],
+                    'vout' => $input['vout'],
+                    'value' => $previous['value'],
+                    'script' => $previous['script'],
                     'path' => rtrim((string)$this->wallet->derivation_path, '/').'/'.$address->chain.'/'.$address->index,
                 ];
             }
 
-            $outputs = array_map(fn ($vout) => [
-                'value' => (int)$vout['value'],
-                'script' => hex2bin($vout['scriptpubkey']),
-                'address' => $vout['scriptpubkey_address'] ?? null,
-                'role' => isset($vout['scriptpubkey_address']) && $own->has($vout['scriptpubkey_address']) ? 'change' : (($vout['value'] ?? 0) == 0 ? 'data' : 'recipient'),
-            ], $tx['vout']);
+            $outputs = [];
+            foreach ($original->outputs as $output) {
+                $address = Script::toAddress($output['script']);
+                $role = $address === null ? 'data' : ($own->has($address) ? 'change' : 'recipient');
+
+                if ($role === 'recipient' && !$transfers->contains(fn ($t) => $t->receiver_address === $address && self::satoshi($t->amount) === $output['value'])) {
+                    throw new \RuntimeException('The transaction does not match the recorded transfer.');
+                }
+
+                $outputs[] = ['value' => $output['value'], 'script' => $output['script'], 'address' => $address, 'role' => $role];
+            }
 
             $changeIndex = array_key_last(array_filter($outputs, fn ($o) => $o['role'] === 'change'));
 
@@ -185,9 +213,14 @@ class LightTransfers
                 throw new \RuntimeException('The transaction has no change to pay a higher fee from.');
             }
 
-            $oldFee = (int)$tx['fee'];
-            $vsize = (int)ceil($tx['weight'] / 4);
+            $oldFee = array_sum(array_column($inputs, 'value')) - array_sum(array_column($outputs, 'value'));
+            $vsize = $this->vsize($original);
             $newFee = max((int)ceil($feeRate * $vsize), $oldFee + $vsize);
+
+            if ($newFee > $maxRate * $vsize) {
+                throw new \RuntimeException('The fee would be above the limit of '.$maxRate.' sat/vB.');
+            }
+
             $outputs[$changeIndex]['value'] -= $newFee - $oldFee;
 
             if ($outputs[$changeIndex]['value'] < Script::dust(Script::parse((string)$outputs[$changeIndex]['address'])['kind'])) {
@@ -197,8 +230,8 @@ class LightTransfers
             $unsigned = new Transaction(
                 inputs: array_map(fn ($i) => ['txid' => $i['txid'], 'vout' => $i['vout'], 'sequence' => PsbtBuilder::SEQUENCE_RBF], $inputs),
                 outputs: array_map(fn ($o) => ['value' => $o['value'], 'script' => $o['script']], $outputs),
-                version: (int)$tx['version'],
-                locktime: (int)$tx['locktime'],
+                version: $original->version,
+                locktime: $original->locktime,
             );
 
             $plan = [
@@ -212,23 +245,60 @@ class LightTransfers
             ];
 
             $signed = Signer::sign($plan, $seedHex);
+            $this->reserve($inputs, now()->addHours((int)config('bitcoin.light.reserve_hours', 6)));
             $pool->broadcast($signed['hex'], $plan['txid']);
 
-            DB::transaction(function () use ($txid, $plan, $newFee, $oldFee): void {
-                $old = $this->wallet->transactions()->where('txid', $txid)->first();
-
+            DB::transaction(function () use ($record, $txid, $plan, $newFee, $oldFee): void {
                 $this->wallet->transactions()->updateOrCreate(['txid' => $plan['txid']], [
-                    'direction' => $old?->direction ?? 'out',
-                    'amount' => BigDecimal::of($old?->amount ?? 0)->minus(self::btc($newFee - $oldFee)),
+                    'direction' => $record->direction,
+                    'amount' => BigDecimal::of($record->amount ?? 0)->minus(self::btc($newFee - $oldFee)),
                     'fee' => self::btc($newFee),
                     'time_at' => Date::now(),
                 ]);
-                $old?->update(['dropped_at' => Date::now()]);
+                $record->update(['dropped_at' => Date::now()]);
                 $this->wallet->transfers()->where('txid', $txid)->update(['txid' => $plan['txid']]);
             });
 
             return ['txid' => $plan['txid'], 'old_txid' => $txid, 'fee' => (string)self::btc($newFee), 'fee_rate' => $plan['fee_rate']];
         });
+    }
+
+    /**
+     * Raw transaction from a provider, accepted only when its txid is the requested one.
+     */
+    protected function verifiedTransaction(string $txid): Transaction
+    {
+        $hex = App::make(ProviderPool::class)->call(fn (EsploraApi $api) => $api->transactionHex($txid));
+        $tx = Transaction::fromHex($hex);
+
+        if ($tx->txid() !== $txid) {
+            throw new \RuntimeException('A provider returned another transaction for '.$txid.'.');
+        }
+
+        return $tx;
+    }
+
+    /**
+     * Virtual size of a transaction that has witnesses (all inputs of a light wallet do).
+     */
+    protected function vsize(Transaction $tx): int
+    {
+        $base = strlen($tx->serializeLegacy());
+        $witness = 2;
+
+        foreach ($tx->inputs as $input) {
+            $witness += strlen(Transaction::varInt(count($input['witness'])));
+            foreach ($input['witness'] as $item) {
+                $witness += strlen(Transaction::varInt(strlen($item))) + strlen($item);
+            }
+        }
+
+        return (int)ceil(($base * 4 + $witness) / 4);
+    }
+
+    protected static function satoshi(BigDecimal|string|null $amount): int
+    {
+        return PsbtBuilder::satoshi($amount ?? 0);
     }
 
     /**

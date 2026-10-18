@@ -161,6 +161,10 @@ trait LightWallets
      */
     public function bumpLightFee(BitcoinWallet $wallet, string $txid, float $feeRate, #[\SensitiveParameter] ?string $seedHex): array
     {
+        if (!preg_match('/^[0-9a-f]{64}$/i', $txid)) {
+            throw new \InvalidArgumentException('Invalid txid.');
+        }
+
         return (new LightTransfers($wallet))->bumpFee($txid, $feeRate, $seedHex);
     }
 }

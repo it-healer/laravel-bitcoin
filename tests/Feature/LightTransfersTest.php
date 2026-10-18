@@ -15,11 +15,22 @@ function transferSeed(): string
     return bin2hex(BIP39::fromWords(explode(' ', LIGHT_MNEMONIC), English::getInstance())->generateSeed(''));
 }
 
+/**
+ * Coins on RECEIVE_0: one real (unsigned) funding transaction with an output per value, known
+ * to the provider by its raw hex, so its txid is genuine.
+ */
 function fundReceive0(int ...$values): void
 {
+    static $nonce = 0;
+    $funding = new Transaction(
+        inputs: [['txid' => str_pad(dechex(++$nonce), 64, 'f', STR_PAD_LEFT), 'vout' => 0, 'sequence' => 0xffffffff]],
+        outputs: array_map(fn ($value) => ['value' => $value, 'script' => \ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(RECEIVE_0)], $values),
+    );
+    $txid = rememberRaw(bin2hex($funding->serializeLegacy()));
+
     $utxos = chainState()->utxos;
     foreach ($values as $i => $value) {
-        $utxos[RECEIVE_0][] = ['txid' => str_pad(dechex(count($utxos[RECEIVE_0] ?? []) + 1), 64, 'c', STR_PAD_LEFT), 'vout' => $i, 'value' => $value, 'status' => ['confirmed' => true, 'block_height' => 899_000]];
+        $utxos[RECEIVE_0][] = ['txid' => $txid, 'vout' => $i, 'value' => $value, 'status' => ['confirmed' => true, 'block_height' => 899_000]];
     }
     chainState()->utxos = $utxos;
 }
@@ -210,20 +221,22 @@ it('reports the status of a transaction from the providers', function () {
         ->and(fn () => Bitcoin::lightTransactionStatus('../etc'))->toThrow(InvalidArgumentException::class);
 });
 
+/**
+ * A send of 0.0005 BTC from 100 000 sat at `$rate`, known to the provider by its raw hex.
+ */
+function sentForBump(BitcoinWallet $wallet, float $rate = 2): \ItHealer\LaravelBitcoin\Models\BitcoinTransfer
+{
+    fundReceive0(100_000);
+    $transfer = Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0005', 'comment' => 'rent']], seedHex: transferSeed(), feeRate: $rate)[0];
+    rememberRaw(chainState()->broadcasts[0]['hex']);
+
+    return $transfer;
+}
+
 it('speeds up an unconfirmed send: same inputs and recipient, higher fee from the change', function () {
     $wallet = sendSetup();
-    fundReceive0(100_000);
-    $transfer = Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0005', 'comment' => 'rent']], seedHex: transferSeed(), feeRate: 2)[0];
-
-    $original = chainState()->broadcasts[0]['hex'];
-    $addresses = [
-        bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(STRANGER)) => STRANGER,
-        bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(RECEIVE_0)) => RECEIVE_0,
-    ];
-    $state = chainState()['esplora'] ?? [];
-    $state[$transfer->txid] = esploraTxFromHex($original, $addresses);
-    chainState()['esplora'] = $state;
-    $oldTx = Transaction::fromHex($original);
+    $transfer = sentForBump($wallet);
+    $oldTx = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
 
     $bump = Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed());
     $new = Transaction::fromHex(chainState()->broadcasts[2]['hex']);
@@ -246,33 +259,57 @@ it('speeds up an unconfirmed send: same inputs and recipient, higher fee from th
 
 it('requires at least 1 sat/vB more than the original fee when speeding up', function () {
     $wallet = sendSetup();
-    fundReceive0(100_000);
-    $transfer = Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0005']], seedHex: transferSeed(), feeRate: 10)[0];
-    $state = chainState()['esplora'] ?? [];
-    $state[$transfer->txid] = esploraTxFromHex(chainState()->broadcasts[0]['hex'], [
-        bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(STRANGER)) => STRANGER,
-        bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(RECEIVE_0)) => RECEIVE_0,
-    ]);
-    chainState()['esplora'] = $state;
-    $oldFee = $state[$transfer->txid]['fee'];
-    $vsize = (int)ceil($state[$transfer->txid]['weight'] / 4);
+    $transfer = sentForBump($wallet, 10);
+    $old = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
+    $oldFee = 100_000 - array_sum(array_column($old->outputs, 'value'));
 
-    // asking for a lower rate still pays old fee + 1 sat/vB
+    // asking for a lower rate still pays old fee + 1 sat/vB of the real size
     $bump = Bitcoin::bumpLightFee($wallet, $transfer->txid, 1, transferSeed());
+    $vsize = (int)ceil((strlen($old->serializeLegacy()) * 3 + strlen(hex2bin(chainState()->broadcasts[0]['hex']))) / 4);
 
     expect((int)round((float)$bump['fee'] * 1e8))->toBe($oldFee + $vsize);
+});
+
+it('does not sign what a provider returns instead of the original transaction', function () {
+    $wallet = sendSetup();
+    $transfer = sentForBump($wallet);
+
+    // the provider answers with another transaction (say, paying the attacker) for this txid
+    $raw = chainState()['raw'];
+    $raw[$transfer->txid] = bin2hex((new Transaction(
+        inputs: Transaction::fromHex(chainState()->broadcasts[0]['hex'])->inputs,
+        outputs: [['value' => 99_000, 'script' => \ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2')]],
+    ))->serializeLegacy());
+    chainState()['raw'] = $raw;
+
+    expect(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed()))->toThrow(RuntimeException::class, 'another transaction')
+        ->and(chainState()->broadcasts)->toHaveCount(2);
+});
+
+it('does not speed up a transaction that does not match the recorded transfer or was not sent here', function () {
+    $wallet = sendSetup();
+    $transfer = sentForBump($wallet);
+
+    expect(fn () => Bitcoin::bumpLightFee($wallet, str_repeat('ab', 32), 20, transferSeed()))->toThrow(RuntimeException::class, 'sent from this wallet');
+
+    $transfer->update(['amount' => '0.0004']);
+
+    expect(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed()))->toThrow(RuntimeException::class, 'does not match')
+        ->and(fn () => Bitcoin::bumpLightFee($wallet, '../tx', 20, transferSeed()))->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 5000, transferSeed()))->toThrow(RuntimeException::class, 'limit');
 });
 
 it('refuses to speed up a confirmed transaction or one without change', function () {
     $wallet = sendSetup();
     fundReceive0(50_300);
     $transfer = Bitcoin::sendPSBT($wallet, RECEIVE_0, STRANGER, null, seedHex: transferSeed());
-    $json = esploraTxFromHex(chainState()->broadcasts[0]['hex'], [bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress(STRANGER)) => STRANGER]);
-    chainState()['esplora'] = [$transfer->txid => $json];
+    rememberRaw(chainState()->broadcasts[0]['hex']);
 
     expect(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed()))->toThrow(RuntimeException::class, 'no change');
 
-    chainState()['esplora'] = [$transfer->txid => [...$json, 'status' => ['confirmed' => true, 'block_height' => 900_000]]];
+    $txs = chainState()->txs;
+    $txs[$transfer->txid] = ['txid' => $transfer->txid, 'vin' => [], 'vout' => [], 'fee' => 0, 'status' => ['confirmed' => true, 'block_height' => 900_000]];
+    chainState()->txs = $txs;
 
     expect(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed()))->toThrow(RuntimeException::class, 'already confirmed');
 });

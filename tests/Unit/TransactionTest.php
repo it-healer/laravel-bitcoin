@@ -71,3 +71,18 @@ it('builds OP_RETURN scripts up to 80 bytes', function () {
         ->and(bin2hex(substr(Script::opReturn(str_repeat('a', 80)), 0, 3)))->toBe('6a4c50')
         ->and(fn () => Script::opReturn(str_repeat('a', 81)))->toThrow(InvalidArgumentException::class);
 });
+
+it('turns output scripts back into addresses', function (string $address) {
+    expect(Script::toAddress(Script::forAddress($address)))->toBe(strtolower($address) === $address || !str_starts_with(strtolower($address), 'bc1') ? $address : strtolower($address));
+})->with([
+    'p2wpkh' => ['bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'],
+    'p2tr' => ['bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0'],
+    'p2pkh' => ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2'],
+    'p2sh' => ['3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy'],
+]);
+
+it('has no address for OP_RETURN or garbage scripts', function () {
+    expect(Script::toAddress(Script::opReturn('memo')))->toBeNull()
+        ->and(Script::toAddress(''))->toBeNull()
+        ->and(Script::toAddress("\x00\x05abc"))->toBeNull();
+});
