@@ -2,7 +2,7 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
-## v2.3.0 - unreleased
+## v2.3.0 - 2026-10-18
 
 ### Added
 
