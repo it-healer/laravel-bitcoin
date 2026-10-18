@@ -2,6 +2,14 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.3.1 - 2026-10-18
+
+### Fixed
+
+- A transfer recorded by a send to an own address never got its confirmations: the sync updated
+  transfer rows only for outgoing transactions. Now the rows of every transaction follow it, and a
+  transfer left without height takes it from its already mined transaction.
+
 ## v2.3.0 - 2026-10-18
 
 ### Added

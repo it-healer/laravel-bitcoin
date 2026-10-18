@@ -258,6 +258,9 @@ class LightWalletSync extends BaseConsole
             }
         }
 
+        // Transfers recorded by a send of this wallet (to itself too) follow their transaction
+        $this->wallet->transfers()->where('txid', $txid)->update(['block_height' => $height, 'confirmations' => $confirmations]);
+
         if ($direction === 'out' && $firstInput) {
             foreach ($foreignOutputs as $output) {
                 $this->wallet->transfers()->updateOrCreate(
@@ -357,6 +360,11 @@ class LightWalletSync extends BaseConsole
                 $this->log('Transaction '.$txid.' is no longer confirmed (reorg), waiting for it again.');
             }
         }
+
+        // Transfers whose transaction is already known as mined (recorded before it was) take its height
+        $mined = $this->wallet->transactions()->whereNotNull('block_height')->pluck('block_height', 'txid');
+        $this->wallet->transfers()->whereNull('block_height')->whereIn('txid', $mined->keys())->get()
+            ->each(fn ($transfer) => $transfer->update(['block_height' => $mined[$transfer->txid]]));
 
         foreach ($queries() as $query) {
             $query->where('confirmations', '<', $target + 1)

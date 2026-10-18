@@ -332,3 +332,33 @@ it('does not let a padded witness from the provider inflate the fee of a speed-u
     // 141 vB × 20 sat/vB, not the size of a 10 kB witness
     expect((int)round((float)$bump['fee'] * 1e8))->toBe(2820);
 })->skip(fn () => !function_exists('gmp_init'), 'gmp');
+
+it('confirms the recorded transfer of a send to an own address when it is mined', function () {
+    $wallet = sendSetup();
+    Bitcoin::createAddress($wallet->fresh());
+    fundReceive0(100_000);
+    $transfer = Bitcoin::sendMassPSBT($wallet, RECEIVE_0, [['address' => RECEIVE_1, 'amount' => '0.0005']], seedHex: transferSeed())[0];
+
+    // the provider has it in a block: spent from RECEIVE_0, paid to RECEIVE_1 and the change
+    $tx = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
+    addTx($transfer->txid, [[RECEIVE_0, 100_000]], [[RECEIVE_1, $tx->outputs[0]['value']], [RECEIVE_0, $tx->outputs[1]['value']]], 900_000);
+    syncWallet($wallet);
+
+    expect($wallet->transactions()->where('txid', $transfer->txid)->value('direction'))->toBe('self')
+        ->and($transfer->fresh()->block_height)->toBe(900_000)
+        ->and($transfer->fresh()->confirmations)->toBe(1);
+});
+
+it('repairs a recorded transfer left without height while its transaction is already mined', function () {
+    $wallet = sendSetup();
+    $wallet->update(['gap_scan_at' => now()]);
+    $address = $wallet->addresses()->where('address', RECEIVE_0)->first();
+    $txid = str_repeat('9', 64);
+    $wallet->transactions()->create(['txid' => $txid, 'direction' => 'self', 'amount' => '-0.00000178', 'block_height' => 899_998]);
+    $transfer = $wallet->transfers()->create(['address_id' => $address->id, 'txid' => $txid, 'receiver_address' => RECEIVE_1, 'amount' => '0.00003822', 'confirmations' => 0, 'time_at' => now()]);
+
+    syncWallet($wallet);
+
+    expect($transfer->fresh()->block_height)->toBe(899_998)
+        ->and($transfer->fresh()->confirmations)->toBe(3);
+});
