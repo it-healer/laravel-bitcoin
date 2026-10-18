@@ -58,12 +58,20 @@ class NodeSyncService extends BaseConsole
         $this->log("Синхронизация ноды {$this->node->name} завершена!");
     }
 
+    /**
+     * Only the wallets of this node: light wallets have no node, other nodes sync their own.
+     */
+    protected function wallets(): \Illuminate\Database\Eloquent\Builder
+    {
+        return Bitcoin::getModelWallet()::query()
+            ->where('node_id', $this->node->getKey())
+            ->where('mode', 'node')
+            ->orderBy('sync_at', 'desc');
+    }
+
     protected function syncWallets(): static
     {
-        $walletModel = Bitcoin::getModelWallet();
-
-        $walletModel::query()
-            ->orderBy('sync_at', 'desc')
+        $this->wallets()
             ->get()
             ->each(function(BitcoinWallet $wallet) {
                 $this->log("Начинаем синхронизацию кошелька $wallet->name...");
