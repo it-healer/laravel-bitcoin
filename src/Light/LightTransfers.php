@@ -279,21 +279,15 @@ class LightTransfers
     }
 
     /**
-     * Virtual size of a transaction that has witnesses (all inputs of a light wallet do).
+     * Virtual size from what the txid covers: P2WPKH inputs at their largest (68 vB) and the
+     * outputs. The witness of the original is not used — the txid does not cover it, so a
+     * provider could pad it to inflate the fee.
      */
     protected function vsize(Transaction $tx): int
     {
-        $base = strlen($tx->serializeLegacy());
-        $witness = 2;
+        $outputs = array_sum(array_map(fn ($o) => Script::outputVsize($o['script']), $tx->outputs));
 
-        foreach ($tx->inputs as $input) {
-            $witness += strlen(Transaction::varInt(count($input['witness'])));
-            foreach ($input['witness'] as $item) {
-                $witness += strlen(Transaction::varInt(strlen($item))) + strlen($item);
-            }
-        }
-
-        return (int)ceil(($base * 4 + $witness) / 4);
+        return (int)ceil(10.5 + 68 * count($tx->inputs) + $outputs);
     }
 
     protected static function satoshi(BigDecimal|string|null $amount): int

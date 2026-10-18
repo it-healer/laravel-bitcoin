@@ -2,9 +2,12 @@
 
 namespace ItHealer\LaravelBitcoin\Light;
 
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelBitcoin\Enums\AddressType;
+use ItHealer\LaravelBitcoin\Light\Api\EsploraApi;
+use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -59,14 +62,25 @@ class AddressBook
         return DB::transaction(function () use ($title): BitcoinAddress {
             $this->ensureGap();
 
-            /** @var BitcoinAddress $address */
-            $address = $this->wallet->addresses()
-                ->where('chain', self::RECEIVE)
-                ->whereNull('issued_at')
-                ->where('tx_count', 0)
-                ->orderBy('index')
-                ->lockForUpdate()
-                ->firstOrFail();
+            do {
+                /** @var BitcoinAddress $address */
+                $address = $this->wallet->addresses()
+                    ->where('chain', self::RECEIVE)
+                    ->whereNull('issued_at')
+                    ->where('tx_count', 0)
+                    ->orderBy('index')
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                // A restored wallet before its first full sync does not know which addresses are
+                // used yet: each candidate is checked so an address with history is never handed out
+                $used = !$this->wallet->gap_scan_at && $this->hasHistory($address->address);
+
+                if ($used) {
+                    $address->update(['tx_count' => 1, 'issued_at' => Date::now(), 'available' => true, 'stats_hash' => null]);
+                    $this->ensureGap();
+                }
+            } while ($used);
 
             $address->update([
                 'issued_at' => Date::now(),
@@ -102,6 +116,13 @@ class AddressBook
 
             return $address;
         });
+    }
+
+    protected function hasHistory(string $address): bool
+    {
+        $stats = App::make(ProviderPool::class)->call(fn (EsploraApi $api) => $api->address($address));
+
+        return (int)($stats['chain_stats']['tx_count'] ?? 0) + (int)($stats['mempool_stats']['tx_count'] ?? 0) > 0;
     }
 
     public function derive(int $chain, int $index): string

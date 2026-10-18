@@ -55,6 +55,23 @@ it('hands out receive addresses in order and keeps the gap ahead', function () {
         ->and($wallet->addresses()->where('chain', 0)->max('index'))->toBe(21);
 });
 
+it('never hands out an address with history before the first full sync', function () {
+    $wallet = lightSetup();
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 800_000);
+
+    $issued = Bitcoin::createAddress($wallet);
+
+    expect($issued->address)->toBe(RECEIVE_1)
+        ->and($wallet->addresses()->where('address', RECEIVE_0)->value('tx_count'))->toBe(1);
+
+    // after a full sync the state is known and addresses are not checked one by one
+    syncWallet($wallet, full: true);
+    $before = requestsTo('#^/api/address/[^/]+$#');
+    Bitcoin::createAddress($wallet->fresh());
+
+    expect(requestsTo('#^/api/address/[^/]+$#'))->toBe($before);
+});
+
 /* ---------- Deposits ---------- */
 
 it('shows an unconfirmed deposit, then confirms it and calls the webhook once', function () {
@@ -392,6 +409,7 @@ it('reads older history pages until a known confirmed transaction', function () 
 
 it('falls back to the next provider and counts requests per provider', function () {
     $wallet = lightSetup();
+    $wallet->update(['gap_scan_at' => now()]);
     Bitcoin::createAddress($wallet);
     chainState()->down = ['mempool.test'];
 

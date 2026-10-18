@@ -263,9 +263,9 @@ it('requires at least 1 sat/vB more than the original fee when speeding up', fun
     $old = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
     $oldFee = 100_000 - array_sum(array_column($old->outputs, 'value'));
 
-    // asking for a lower rate still pays old fee + 1 sat/vB of the real size
+    // asking for a lower rate still pays old fee + 1 sat/vB of the size (1 input, 2 outputs: 141 vB)
     $bump = Bitcoin::bumpLightFee($wallet, $transfer->txid, 1, transferSeed());
-    $vsize = (int)ceil((strlen($old->serializeLegacy()) * 3 + strlen(hex2bin(chainState()->broadcasts[0]['hex']))) / 4);
+    $vsize = 141;
 
     expect((int)round((float)$bump['fee'] * 1e8))->toBe($oldFee + $vsize);
 });
@@ -313,3 +313,22 @@ it('refuses to speed up a confirmed transaction or one without change', function
 
     expect(fn () => Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed()))->toThrow(RuntimeException::class, 'already confirmed');
 });
+
+it('does not let a padded witness from the provider inflate the fee of a speed-up', function () {
+    $wallet = sendSetup();
+    $transfer = sentForBump($wallet);
+
+    // same txid (the witness is not part of it), but a huge witness
+    $tx = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
+    $hex = chainState()->broadcasts[0]['hex'];
+    $witnessStart = strlen($hex) - 8 - 2 * (1 + array_sum(array_map(fn ($i) => array_sum(array_map(fn ($w) => 1 + strlen($w), $i['witness'])) + 1, $tx->inputs)) - 1);
+    $padded = substr($hex, 0, $witnessStart).'03'.'fd1027'.str_repeat('00', 10_000).substr($hex, $witnessStart + 2);
+    $raw = chainState()['raw'];
+    $raw[$transfer->txid] = $padded;
+    chainState()['raw'] = $raw;
+
+    $bump = Bitcoin::bumpLightFee($wallet, $transfer->txid, 20, transferSeed());
+
+    // 141 vB × 20 sat/vB, not the size of a 10 kB witness
+    expect((int)round((float)$bump['fee'] * 1e8))->toBe(2820);
+})->skip(fn () => !function_exists('gmp_init'), 'gmp');
