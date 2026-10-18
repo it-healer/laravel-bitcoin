@@ -2,6 +2,13 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.3.2 - 2026-10-18
+
+### Fixed
+
+- Node sync (`bitcoin:node-sync`) went through every wallet instead of the node-mode wallets of its
+  own node: light wallets were tried against the node, and with two nodes every wallet synced twice.
+
 ## v2.3.1 - 2026-10-18
 
 ### Fixed
