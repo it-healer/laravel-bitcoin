@@ -198,3 +198,14 @@ it('keeps the coins reserved for a while after a rejected broadcast, then frees 
 
     expect(Bitcoin::previewMassPSBT($wallet, RECEIVE_0, [['address' => STRANGER, 'amount' => '0.0001']])['beforeBalance'])->toBe('0.00100000');
 });
+
+it('reports the status of a transaction from the providers', function () {
+    lightSetup();
+    addTx(str_repeat('a', 64), [[STRANGER, 1000]], [[RECEIVE_0, 900]], 899_998);
+    addTx(str_repeat('b', 64), [[STRANGER, 1000]], [[RECEIVE_0, 900]]);
+
+    expect(Bitcoin::lightTransactionStatus(str_repeat('a', 64)))->toBe(['confirmed' => true, 'block_height' => 899_998, 'confirmations' => 3])
+        ->and(Bitcoin::lightTransactionStatus(str_repeat('b', 64)))->toBe(['confirmed' => false, 'block_height' => null, 'confirmations' => 0])
+        ->and(Bitcoin::lightTransactionStatus(str_repeat('c', 64)))->toBeNull()
+        ->and(fn () => Bitcoin::lightTransactionStatus('../etc'))->toThrow(InvalidArgumentException::class);
+});

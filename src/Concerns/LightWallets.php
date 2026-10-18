@@ -9,6 +9,7 @@ use ItHealer\LaravelBitcoin\BIP39\BIP39;
 use ItHealer\LaravelBitcoin\BIP39\Language\English;
 use ItHealer\LaravelBitcoin\Light\AddressBook;
 use ItHealer\LaravelBitcoin\Light\LightTransfers;
+use ItHealer\LaravelBitcoin\Light\Api\EsploraApi;
 use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Light\Sync\LightWalletSync;
@@ -122,5 +123,33 @@ trait LightWallets
     public function lightFeeRates(): array
     {
         return LightTransfers::recommendedFeeRates();
+    }
+
+    /**
+     * Status of a transaction from the providers: ['confirmed' => bool, 'block_height' => ?int,
+     * 'confirmations' => int], or null when no provider knows it (not sent, or dropped).
+     *
+     * @return array{confirmed: bool, block_height: ?int, confirmations: int}|null
+     */
+    public function lightTransactionStatus(string $txid): ?array
+    {
+        if (!preg_match('/^[0-9a-f]{64}$/i', $txid)) {
+            throw new \InvalidArgumentException('Invalid txid.');
+        }
+
+        $pool = App::make(ProviderPool::class);
+        $status = $pool->call(fn (EsploraApi $api) => $api->transactionStatus($txid));
+
+        if ($status === null) {
+            return null;
+        }
+
+        $height = ($status['confirmed'] ?? false) ? (int)$status['block_height'] : null;
+
+        return [
+            'confirmed' => $height !== null,
+            'block_height' => $height,
+            'confirmations' => $height !== null ? max(0, $pool->tipHeight() - $height + 1) : 0,
+        ];
     }
 }
