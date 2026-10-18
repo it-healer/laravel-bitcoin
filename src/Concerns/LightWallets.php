@@ -5,6 +5,7 @@ namespace ItHealer\LaravelBitcoin\Concerns;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelBitcoin\BIP39\BIP39;
 use ItHealer\LaravelBitcoin\BIP39\Language\English;
 use ItHealer\LaravelBitcoin\Light\AddressBook;
@@ -47,14 +48,24 @@ trait LightWallets
         ?string $title = null,
         ?string $derivationPath = null,
     ): BitcoinWallet {
+        $path = $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'");
+
+        return $this->createLightWalletFromXpub($name, $this->xpubFromSeed($seedHex, $path), $title, $path);
+    }
+
+    /**
+     * Account xpub of a BIP39 seed (hex) — what a light wallet keeps instead of the seed.
+     */
+    public function xpubFromSeed(#[\SensitiveParameter] string $seedHex, ?string $derivationPath = null): string
+    {
         if (!ctype_xdigit($seedHex) || strlen($seedHex) < 32 || strlen($seedHex) > 128 || strlen($seedHex) % 2 !== 0) {
             throw new \InvalidArgumentException('Seed must be 16-64 bytes in hex.');
         }
 
-        $path = $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'");
-        $xpub = ExtendedKey::fromSeed(hex2bin($seedHex))->derivePath($path)->neutered()->toXpub();
-
-        return $this->createLightWalletFromXpub($name, $xpub, $title, $path);
+        return ExtendedKey::fromSeed(hex2bin($seedHex))
+            ->derivePath($derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'"))
+            ->neutered()
+            ->toXpub();
     }
 
     /**
@@ -166,5 +177,66 @@ trait LightWallets
         }
 
         return (new LightTransfers($wallet))->bumpFee($txid, $feeRate, $seedHex);
+    }
+
+    /**
+     * Moves a wallet of the node mode to the light mode with its account xpub: the known
+     * addresses get their chain and index (looked up to `$scanLimit` per chain), the node is
+     * detached, and the hidden gap is derived. Addresses not found keep receiving in the history
+     * but cannot be spent from (their key path is unknown). Deposits and transfers stay as they
+     * are; `$birthHeight` (the current tip by default) keeps history found later out of webhooks.
+     *
+     * @return array{matched: int, unmatched: list<string>}
+     */
+    public function convertToLight(BitcoinWallet $wallet, string $xpub, ?int $birthHeight = null, int $scanLimit = 1000, ?string $derivationPath = null): array
+    {
+        if ($wallet->isLight()) {
+            return ['matched' => 0, 'unmatched' => []];
+        }
+
+        $account = ExtendedKey::fromPublicString($xpub);
+        $birthHeight ??= App::make(ProviderPool::class)->tipHeight();
+
+        $known = $wallet->addresses()->pluck('id', 'address');
+        $found = [];
+
+        foreach ([AddressBook::RECEIVE, AddressBook::CHANGE] as $chain) {
+            $chainKey = $account->deriveChild($chain);
+
+            for ($index = 0; $index < $scanLimit && count($found) < $known->count(); $index++) {
+                $address = $chainKey->deriveChild($index)->p2wpkhAddress();
+
+                if ($known->has($address)) {
+                    $found[$address] = [$chain, $index];
+                }
+            }
+        }
+
+        DB::transaction(function () use ($wallet, $account, $birthHeight, $found, $derivationPath): void {
+            foreach ($found as $address => [$chain, $index]) {
+                $wallet->addresses()->where('address', $address)->update([
+                    'chain' => $chain,
+                    'index' => $index,
+                    'issued_at' => Date::now(),
+                    'stats_hash' => null,
+                ]);
+            }
+
+            $wallet->update([
+                'mode' => 'light',
+                'node_id' => null,
+                'xpub' => $account->toXpub(),
+                'derivation_path' => $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'"),
+                'birth_height' => $birthHeight,
+                'gap_scan_at' => null,
+            ]);
+
+            (new AddressBook($wallet))->ensureGap();
+        });
+
+        return [
+            'matched' => count($found),
+            'unmatched' => $known->keys()->diff(array_keys($found))->values()->all(),
+        ];
     }
 }

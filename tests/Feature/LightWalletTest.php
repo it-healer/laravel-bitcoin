@@ -72,6 +72,40 @@ it('never hands out an address with history before the first full sync', functio
     expect(requestsTo('#^/api/address/[^/]+$#'))->toBe($before);
 });
 
+/* ---------- Moving node wallets to the light mode ---------- */
+
+it('moves a node wallet to the light mode, keeping its addresses, deposits and transfers', function () {
+    lightSetup();
+    $node = \ItHealer\LaravelBitcoin\Models\BitcoinNode::create(['name' => 'local', 'host' => '127.0.0.1', 'port' => 8332, 'available' => false]);
+    $wallet = BitcoinWallet::create(['node_id' => $node->id, 'name' => 'old', 'descriptors' => '[]', 'balance' => '0.001']);
+    $receive = $wallet->addresses()->create(['address' => RECEIVE_1, 'type' => 'bech32', 'title' => 'Shop', 'available' => true]);
+    $change = $wallet->addresses()->create(['address' => CHANGE_0, 'type' => 'bech32', 'available' => true]);
+    $foreign = $wallet->addresses()->create(['address' => STRANGER, 'type' => 'bech32', 'available' => true]);
+    $deposit = $wallet->deposits()->create(['address_id' => $receive->id, 'txid' => str_repeat('a', 64), 'amount' => '0.001', 'confirmations' => 10, 'time_at' => now(), 'webhook_status' => 2]);
+
+    $report = Bitcoin::convertToLight($wallet, BIP84_TEST_XPUB);
+    $wallet->refresh();
+
+    expect($report)->toBe(['matched' => 2, 'unmatched' => [STRANGER]])
+        ->and($wallet->isLight())->toBeTrue()
+        ->and($wallet->node_id)->toBeNull()
+        ->and($wallet->birth_height)->toBe(900_000)
+        ->and($receive->fresh()->only(['chain', 'index', 'title']))->toBe(['chain' => 0, 'index' => 1, 'title' => 'Shop'])
+        ->and($change->fresh()->only(['chain', 'index']))->toBe(['chain' => 1, 'index' => 0])
+        ->and($foreign->fresh()->chain)->toBeNull()
+        ->and($deposit->fresh()->webhook_status)->toBe(2)
+        // the gap continues after the used addresses
+        ->and($wallet->addresses()->where('chain', 0)->max('index'))->toBe(21)
+        ->and($wallet->addresses()->where('chain', 1)->max('index'))->toBe(20);
+
+    // deleting the old node no longer touches the wallet
+    $node->delete();
+    expect(BitcoinWallet::find($wallet->id))->not->toBeNull();
+
+    // a second call changes nothing
+    expect(Bitcoin::convertToLight($wallet, BIP84_TEST_XPUB))->toBe(['matched' => 0, 'unmatched' => []]);
+});
+
 /* ---------- Deposits ---------- */
 
 it('shows an unconfirmed deposit, then confirms it and calls the webhook once', function () {
