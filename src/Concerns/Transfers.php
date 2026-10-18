@@ -5,6 +5,7 @@ namespace ItHealer\LaravelBitcoin\Concerns;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
+use ItHealer\LaravelBitcoin\Light\LightTransfers;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinTransfer;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -94,7 +95,12 @@ trait Transfers
         bool $subtractFeeFromOutputs = false,
         BitcoinAddress|string|null $changeAddress = null,
         ?string $data = null,
+        ?float $feeRate = null,
     ): array {
+        if ($wallet->isLight()) {
+            return $this->lightPreviewSingle($wallet, $fromAddress, $toAddress, $amount, $subtractFeeFromOutputs, $changeAddress, $data, $feeRate);
+        }
+
         if ($data !== null && (!ctype_xdigit($data) || strlen($data) % 2 !== 0 || strlen($data) > 160)) {
             throw new \InvalidArgumentException('OP_RETURN data must be hex, up to 80 bytes');
         }
@@ -271,7 +277,28 @@ trait Transfers
         BitcoinAddress|string|null $changeAddress = null,
         ?string $comment = null,
         ?string $data = null,
+        #[\SensitiveParameter] ?string $seedHex = null,
+        ?float $feeRate = null,
     ): BitcoinTransfer {
+        if ($wallet->isLight()) {
+            $light = new LightTransfers($wallet);
+            $all = $amount === null;
+
+            return $light->send(
+                $fromAddress,
+                [[
+                    'address' => $toAddress instanceof BitcoinAddress ? $toAddress->address : $toAddress,
+                    'amount' => $all ? $light->spendableBalance($fromAddress) : $amount,
+                    'comment' => $comment,
+                ]],
+                $seedHex,
+                $subtractFeeFromOutputs || $all,
+                $changeAddress,
+                $feeRate,
+                $data,
+            )[0];
+        }
+
         if (!($fromAddress instanceof BitcoinAddress)) {
             $fromAddress = $wallet->addresses()->whereAddress($fromAddress)->firstOrFail();
         }
@@ -352,8 +379,16 @@ trait Transfers
         BitcoinAddress|string $fromAddress,
         array $recipients,
         bool $subtractFeeFromOutputs = false,
-        BitcoinAddress|string|null $changeAddress = null
+        BitcoinAddress|string|null $changeAddress = null,
+        ?float $feeRate = null,
     ): array {
+        if ($wallet->isLight()) {
+            $preview = (new LightTransfers($wallet))->preview($fromAddress, $recipients, $subtractFeeFromOutputs, $changeAddress, $feeRate);
+            unset($preview['plan']);
+
+            return $preview;
+        }
+
         if ($fromAddress instanceof BitcoinAddress) {
             $fromAddress = $fromAddress->address;
         }
@@ -469,8 +504,17 @@ trait Transfers
         array $recipients,
         bool $subtractFeeFromOutputs = false,
         BitcoinAddress|string|null $changeAddress = null,
-        ?array &$preview = null
+        ?array &$preview = null,
+        #[\SensitiveParameter] ?string $seedHex = null,
+        ?float $feeRate = null,
     ): array {
+        if ($wallet->isLight()) {
+            $transfers = (new LightTransfers($wallet))->send($fromAddress, $recipients, $seedHex, $subtractFeeFromOutputs, $changeAddress, $feeRate, preview: $preview);
+            unset($preview['plan']);
+
+            return $transfers;
+        }
+
         if (!($fromAddress instanceof BitcoinAddress)) {
             $fromAddress = $wallet->addresses()->whereAddress($fromAddress)->firstOrFail();
         }
@@ -550,5 +594,42 @@ trait Transfers
         }
 
         return $transfers;
+    }
+
+    /**
+     * previewPSBT() of a light wallet: one recipient, `$amount` null — the whole balance of the
+     * address with the fee taken from it.
+     */
+    protected function lightPreviewSingle(
+        BitcoinWallet $wallet,
+        BitcoinAddress|string $fromAddress,
+        BitcoinAddress|string $toAddress,
+        int|float|string|BigDecimal|null $amount,
+        bool $subtractFeeFromOutputs,
+        BitcoinAddress|string|null $changeAddress,
+        ?string $data,
+        ?float $feeRate,
+    ): array {
+        $light = new LightTransfers($wallet);
+        $to = $toAddress instanceof BitcoinAddress ? $toAddress->address : $toAddress;
+
+        if ($amount === null) {
+            $amount = $light->spendableBalance($fromAddress);
+            $subtractFeeFromOutputs = true;
+        }
+
+        $preview = $light->preview($fromAddress, [['address' => $to, 'amount' => $amount]], $subtractFeeFromOutputs, $changeAddress, $feeRate, $data);
+
+        return [
+            'from' => $preview['from'],
+            'to' => $to,
+            'amount' => $preview['totalAmount'],
+            'fee' => $preview['fee'],
+            'feeRate' => $preview['feeRate'],
+            'beforeBalance' => $preview['beforeBalance'],
+            'afterBalance' => $preview['afterBalance'],
+            'inputs' => $preview['inputs'],
+            'hex' => null,
+        ];
     }
 }

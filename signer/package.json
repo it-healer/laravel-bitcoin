@@ -1,0 +1,17 @@
+{
+  "name": "laravel-bitcoin-signer",
+  "private": true,
+  "description": "Signs PSBTs of laravel-bitcoin light wallets: keys from the BIP39 seed, only inputs of this seed.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/sign.mjs --bundle --platform=node --format=esm --target=node18 --outfile=dist/sign.mjs --legal-comments=none"
+  },
+  "dependencies": {
+    "@scure/base": "2.0.0",
+    "@scure/bip32": "2.0.1",
+    "@scure/btc-signer": "2.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

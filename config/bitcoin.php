@@ -96,5 +96,16 @@ return [
         'lock_seconds' => 900,
         // Deposits mined this many blocks before the wallet was added are history (no webhook)
         'history_margin_blocks' => 6,
+
+        /*
+         * Sending: the fee rate key of the provider's recommendation (fastest, half_hour, hour,
+         * economy, minimum) when none is given, the highest rate accepted, how long spent
+         * outputs stay reserved after a send, and the signer (default: node + the bundled
+         * signer/dist/sign.mjs of this package).
+         */
+        'fee_rate' => 'half_hour',
+        'max_fee_rate' => 500,
+        'reserve_hours' => 6,
+        'signer_command' => null,
     ],
 ];
