@@ -25,6 +25,7 @@ return new class extends Migration {
             $table->string('mode')->default('node')->after('node_id');
             $table->string('xpub')->nullable()->after('descriptors');
             $table->string('derivation_path')->nullable()->after('xpub');
+            $table->unsignedInteger('birth_height')->nullable()->after('derivation_path');
             $table->timestamp('touch_at')->nullable()->after('sync_at');
             $table->timestamp('gap_scan_at')->nullable()->after('touch_at');
         });
@@ -48,7 +49,7 @@ return new class extends Migration {
         });
 
         Schema::table('bitcoin_wallets', function (Blueprint $table) {
-            $table->dropColumn(['mode', 'xpub', 'derivation_path', 'touch_at', 'gap_scan_at']);
+            $table->dropColumn(['mode', 'xpub', 'derivation_path', 'birth_height', 'touch_at', 'gap_scan_at']);
             $table->dropForeign(['node_id']);
         });
 

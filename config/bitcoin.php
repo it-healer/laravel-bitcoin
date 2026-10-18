@@ -94,5 +94,7 @@ return [
         'timeout' => 20,
         // A wallet sync holds a lock this long at most (a full sync of a busy wallet takes minutes)
         'lock_seconds' => 900,
+        // Deposits mined this many blocks before the wallet was added are history (no webhook)
+        'history_margin_blocks' => 6,
     ],
 ];

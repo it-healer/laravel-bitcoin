@@ -17,6 +17,7 @@ const LIGHT_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon 
 const RECEIVE_0 = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
 const RECEIVE_1 = 'bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g';
 const CHANGE_0 = 'bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el';
+const BIP84_TEST_XPUB = 'xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V';
 const STRANGER = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
 
 /**
@@ -149,8 +150,11 @@ function lightSetup(): BitcoinWallet
     BitcoinProvider::create(['name' => 'blockstream', 'base_url' => 'https://blockstream.test/api', 'priority' => 2]);
 
     $wallet = Bitcoin::createLightWallet('w1', LIGHT_MNEMONIC);
-    // added long ago: transactions of the fake chain (block time 2025) count as new money
-    $wallet->forceFill(['created_at' => now()->subYears(10)])->save();
+
+    // a clean start for each test: no cached tip, no counted requests, no history margin
+    \Illuminate\Support\Facades\Cache::flush();
+    BitcoinProvider::query()->update(['requests' => 0, 'block_height' => null]);
+    $wallet->update(['birth_height' => 0]);
 
     return $wallet;
 }
@@ -253,29 +257,50 @@ it('shows an unconfirmed deposit, then confirms it and calls the webhook once', 
         ->and(chainState()->handled)->toBe([$deposit->id]);
 });
 
-it('records history from before the wallet was added without calling the webhook', function () {
+it('records history mined well before the wallet was added without calling the webhook', function () {
     $wallet = lightSetup();
     config()->set('bitcoin.webhook.handler', SpyBitcoinWebhook::class);
     config()->set('bitcoin.webhook.confirmations', 1);
-    $wallet->forceFill(['created_at' => \Illuminate\Support\Carbon::createFromTimestamp(1_760_000_100)])->save();
+    $wallet->update(['birth_height' => 900_000]);
 
-    // block_time of addTx is 1 760 000 000 — before the wallet; the second one comes later
-    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_000);
-    $wallet = syncWallet($wallet, full: true);
+    // old: 6+ blocks before the birth height — history
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_994);
+    // within the margin (a miner's late timestamp does not matter, the height does) — new money
+    addTx(str_repeat('b', 64), [[STRANGER, 150_000]], [[RECEIVE_1, 50_000]], 899_998);
+    chainState()->tip = 900_010;
 
-    $old = Deposit::sole();
-    expect($old->webhook_status)->toBe(2)
-        ->and($old->webhook_data['skipped'] ?? null)->not->toBeNull()
-        ->and(chainState()->handled)->toBe([]);
-
-    addTx(str_repeat('b', 64), [[STRANGER, 150_000]], [[RECEIVE_1, 50_000]]);
-    $txs = chainState()->txs;
-    $txs[str_repeat('b', 64)]['status'] = ['confirmed' => true, 'block_height' => 900_000, 'block_time' => 1_760_000_200];
-    chainState()->txs = $txs;
     syncWallet($wallet, full: true);
 
+    $old = Deposit::where('txid', str_repeat('a', 64))->sole();
     $new = Deposit::where('txid', str_repeat('b', 64))->sole();
-    expect(chainState()->handled)->toBe([$new->id]);
+
+    expect($old->webhook_status)->toBe(2)
+        ->and($old->webhook_data['skipped'] ?? null)->not->toBeNull()
+        ->and(chainState()->handled)->toBe([$new->id]);
+});
+
+it('treats nothing as history when the birth height is unknown', function () {
+    $wallet = lightSetup();
+    config()->set('bitcoin.webhook.handler', SpyBitcoinWebhook::class);
+    config()->set('bitcoin.webhook.confirmations', 1);
+    $wallet->update(['birth_height' => null]);
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 100);
+
+    syncWallet($wallet, full: true);
+
+    expect(chainState()->handled)->toBe([Deposit::sole()->id]);
+});
+
+it('stores the chain height when a wallet is created', function () {
+    lightSetup();
+    chainState()->tip = 912_345;
+
+    expect(Bitcoin::createLightWalletFromXpub('w2', BIP84_TEST_XPUB)->birth_height)->toBe(912_345);
+
+    chainState()->down = ['mempool.test', 'blockstream.test'];
+    \Illuminate\Support\Facades\Cache::flush();
+
+    expect(Bitcoin::createLightWalletFromXpub('w3', BIP84_TEST_XPUB)->birth_height)->toBeNull();
 });
 
 it('does not read the history of an address whose stats did not change', function () {

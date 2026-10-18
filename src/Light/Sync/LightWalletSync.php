@@ -249,9 +249,10 @@ class LightWalletSync extends BaseConsole
                     ],
                 );
 
-                // History mined before the wallet appeared here (first sync of a restored wallet)
-                // is recorded without the webhook: no "received" push or merchant call for old money
-                if ($deposit->wasRecentlyCreated && $time && $time->lt($this->wallet->created_at)) {
+                // History mined well before the wallet was added here (first sync of a restored
+                // wallet) is recorded without the webhook: no "received" push or merchant call for
+                // old money. Judged by block height, not by the miner-set block time, with a margin
+                if ($deposit->wasRecentlyCreated && $this->isHistory($height)) {
                     $deposit->update(['webhook_status' => 2, 'webhook_data' => ['skipped' => 'mined before the wallet was added']]);
                 }
             }
@@ -270,6 +271,18 @@ class LightWalletSync extends BaseConsole
                 );
             }
         }
+    }
+
+    /**
+     * Mined at least `history_margin_blocks` before the wallet's birth height. Unknown birth
+     * height or an unconfirmed transaction is never history.
+     */
+    protected function isHistory(?int $height): bool
+    {
+        $birth = $this->wallet->birth_height;
+
+        return $height !== null && $birth !== null
+            && $height <= $birth - max(1, (int)config('bitcoin.light.history_margin_blocks', 6));
     }
 
     /**

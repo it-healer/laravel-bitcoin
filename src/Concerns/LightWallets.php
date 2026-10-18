@@ -2,11 +2,13 @@
 
 namespace ItHealer\LaravelBitcoin\Concerns;
 
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use ItHealer\LaravelBitcoin\BIP39\BIP39;
 use ItHealer\LaravelBitcoin\BIP39\Language\English;
 use ItHealer\LaravelBitcoin\Light\AddressBook;
+use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Light\Sync\LightWalletSync;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -69,6 +71,7 @@ trait LightWallets
                 'title' => $title,
                 'xpub' => $account->toXpub(),
                 'derivation_path' => $derivationPath ?? config('bitcoin.light.derivation_path', "m/84'/0'/0'"),
+                'birth_height' => $this->currentHeight(),
             ]);
 
             (new AddressBook($wallet))->ensureGap();
@@ -97,5 +100,19 @@ trait LightWallets
         }
 
         return true;
+    }
+
+    /**
+     * Chain height when the wallet is added: deposits mined well before it are history found by
+     * the first sync of a restored wallet, not new money. Null when no provider answers — then
+     * nothing is treated as history.
+     */
+    protected function currentHeight(): ?int
+    {
+        try {
+            return App::make(ProviderPool::class)->tipHeight();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }
