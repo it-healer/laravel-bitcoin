@@ -14,6 +14,7 @@ use ItHealer\LaravelBitcoin\Light\Api\EsploraApi;
 use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Light\Sync\LightWalletSync;
+use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 /**
@@ -238,5 +239,16 @@ trait LightWallets
             'matched' => count($found),
             'unmatched' => $known->keys()->diff(array_keys($found))->values()->all(),
         ];
+    }
+
+    /**
+     * Keeps an address on the fastest polling until `$until` (e.g. a merchant order waits for a
+     * payment to it). A later watch never shortens an earlier one.
+     */
+    public function watchAddress(BitcoinAddress $address, \DateTimeInterface $until): void
+    {
+        if ($address->watch_until === null || $address->watch_until->lt($until)) {
+            $address->update(['watch_until' => $until]);
+        }
     }
 }

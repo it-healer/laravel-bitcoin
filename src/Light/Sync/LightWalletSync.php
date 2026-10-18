@@ -58,17 +58,80 @@ class LightWalletSync extends BaseConsole
             throw new \LogicException('Wallet '.$this->wallet->name.' is not a light wallet.');
         }
 
-        $this->tip = $this->pool->tipHeight();
-        $this->log('Tip height: '.$this->tip);
-
         $scanGap = $this->full || $this->gapScanDue();
+        $due = $scanGap ? collect() : $this->dueAddresses();
 
-        $this->scanAddresses($scanGap);
+        if (!$scanGap && $due->isEmpty() && !$this->hasPendingWork()) {
+            $this->log('No address is due, nothing to confirm.');
+
+            return;
+        }
+
+        $this->tip = $this->pool->tipHeight();
+        $this->log('Tip height: '.$this->tip.', addresses due: '.($scanGap ? 'all' : $due->count()));
+
+        $this->scanAddresses($scanGap, $due);
         $this->processTransactions();
         $this->resolveMissingPending();
         $this->updateConfirmations();
         $this->updateWalletBalance($scanGap);
         $this->executeWebhooks();
+    }
+
+    /**
+     * Smart polling: issued and used addresses whose own interval has passed (see
+     * `interval()`), and those with unknown stats (new, or just spent from by this wallet).
+     *
+     * @return Collection<int, BitcoinAddress>
+     */
+    protected function dueAddresses(): Collection
+    {
+        $now = Date::now();
+
+        return $this->wallet->addresses()
+            ->where(fn ($query) => $query->whereNotNull('issued_at')->orWhere('tx_count', '>', 0))
+            ->orderBy('chain')
+            ->orderBy('index')
+            ->get()
+            ->filter(fn (BitcoinAddress $address) => $address->stats_hash === null
+                || !$address->sync_at
+                || $address->sync_at->lte($now->copy()->subSeconds(max(0, $this->interval($address) - 5))));
+    }
+
+    /**
+     * How often an address is asked: every `active_interval` while a merchant order waits on it,
+     * while it has an unconfirmed transaction or while its wallet is open; every
+     * `idle_interval` when issued or active recently; otherwise every `cold_interval`.
+     */
+    protected function interval(BitcoinAddress $address): int
+    {
+        $now = Date::now();
+        $config = fn (string $key, int $default) => (int)config('bitcoin.light.'.$key, $default);
+
+        $touched = $this->wallet->touch_at && $this->wallet->touch_at->gte($now->copy()->subSeconds($config('active_window', 1800)));
+
+        if (($address->watch_until && $address->watch_until->isAfter($now)) || $address->mempool_tx_count > 0 || $touched) {
+            return $config('active_interval', 60);
+        }
+
+        $recent = ($address->issued_at && $address->issued_at->gte($now->copy()->subDays($config('new_address_days', 7))))
+            || ($address->activity_at && $address->activity_at->gte($now->copy()->subDays($config('hot_window_days', 30))));
+
+        return $recent ? $config('idle_interval', 600) : $config('cold_interval', 86400);
+    }
+
+    /**
+     * Something to finish without scanning: confirmations still counting, or an unconfirmed
+     * transaction that may have left the mempool.
+     */
+    protected function hasPendingWork(): bool
+    {
+        $target = max(6, (int)config('bitcoin.webhook.confirmations', 6));
+
+        return $this->wallet->deposits()->whereNotNull('block_height')->where('confirmations', '<', $target)->exists()
+            || $this->wallet->transfers()->whereNotNull('block_height')->where('confirmations', '<', $target)->exists()
+            || $this->wallet->deposits()->where('webhook_status', 0)->exists()
+            || $this->wallet->transactions()->whereNull('block_height')->whereNull('dropped_at')->exists();
     }
 
     protected function gapScanDue(): bool
@@ -82,17 +145,25 @@ class LightWalletSync extends BaseConsole
      * Issued and used addresses every time, the hidden gap only when `$scanGap`. Finding a used
      * address in the gap derives more addresses, which are scanned in the same run.
      */
-    protected function scanAddresses(bool $scanGap): void
+    /**
+     * @param Collection<int, BitcoinAddress> $due
+     */
+    protected function scanAddresses(bool $scanGap, Collection $due): void
     {
         $this->book->ensureGap();
+
+        if (!$scanGap) {
+            $due->each(fn (BitcoinAddress $address) => $this->scanAddress($address));
+
+            return;
+        }
+
+        // Everything, the hidden gap too; a used address found there derives more, scanned in this run
         $scanned = [];
 
         do {
             $addresses = $this->wallet->addresses()
                 ->whereNotIn('id', $scanned)
-                ->when(!$scanGap, fn ($query) => $query->where(
-                    fn ($query) => $query->whereNotNull('issued_at')->orWhere('tx_count', '>', 0)
-                ))
                 ->orderBy('chain')
                 ->orderBy('index')
                 ->get();
@@ -102,7 +173,7 @@ class LightWalletSync extends BaseConsole
                 $this->scanAddress($address);
             }
 
-            $added = $scanGap ? $this->book->ensureGap() : 0;
+            $added = $this->book->ensureGap();
         } while ($added > 0);
     }
 
@@ -129,6 +200,9 @@ class LightWalletSync extends BaseConsole
             'unconfirmed_balance' => self::btc(max($pending, 0)),
             'stats_hash' => $hash,
             'tx_count' => $txCount,
+            'mempool_tx_count' => (int)($mempool['tx_count'] ?? 0),
+            // Activity — a change seen after an earlier look; the first look (import) is not one
+            ...($address->stats_hash !== null && $hash !== $address->stats_hash ? ['activity_at' => Date::now()] : []),
             'sync_at' => Date::now(),
             ...($txCount > 0 && !$address->issued_at ? ['issued_at' => Date::now()] : []),
             ...($txCount > 0 && !$address->issued_at && $address->chain === AddressBook::RECEIVE ? ['available' => true] : []),

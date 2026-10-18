@@ -24,6 +24,9 @@ class BitcoinAddress extends Model
         'unconfirmed_balance',
         'stats_hash',
         'tx_count',
+        'mempool_tx_count',
+        'activity_at',
+        'watch_until',
         'available',
     ];
 
@@ -37,6 +40,9 @@ class BitcoinAddress extends Model
         'index' => 'integer',
         'issued_at' => 'datetime',
         'tx_count' => 'integer',
+        'mempool_tx_count' => 'integer',
+        'activity_at' => 'datetime',
+        'watch_until' => 'datetime',
     ];
 
     public function wallet(): BelongsTo

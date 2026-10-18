@@ -71,8 +71,14 @@ return [
      * gap_scan_interval — how often the unused (never issued) addresses are checked too, in
      *                     seconds: only issued addresses are known to payers, the gap is
      *                     for the same mnemonic used in another wallet app.
-     * active_interval   — sync interval of a wallet touched within active_window.
-     * idle_interval     — sync interval of other wallets.
+     * Smart polling: every address has its own interval, `bitcoin:light-sync` runs every
+     * minute and asks the providers only for the addresses that are due:
+     * active_interval   — addresses of a wallet touched within active_window, watched addresses
+     *                     (a merchant order waits for payment) and addresses with an
+     *                     unconfirmed transaction.
+     * idle_interval     — addresses issued within new_address_days or active within
+     *                     hot_window_days.
+     * cold_interval     — the rest (quiet addresses).
      * tip_cache_seconds — the chain tip height is cached for this long.
      * request_pause_ms  — pause between requests to one provider (public APIs limit bursts).
      * cooldown_seconds  — a provider that answered 429/5xx or did not answer is skipped for
@@ -87,6 +93,9 @@ return [
         'active_window' => 1800,
         'active_interval' => 60,
         'idle_interval' => 600,
+        'cold_interval' => 86400,
+        'new_address_days' => 7,
+        'hot_window_days' => 30,
         'tip_cache_seconds' => 30,
         'request_pause_ms' => 250,
         'cooldown_seconds' => 60,

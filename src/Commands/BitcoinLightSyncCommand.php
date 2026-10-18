@@ -3,13 +3,12 @@
 namespace ItHealer\LaravelBitcoin\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Date;
 use ItHealer\LaravelBitcoin\Facades\Bitcoin;
-use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 /**
- * Syncs light wallets that are due: touched within `active_window` — every `active_interval`,
- * the rest every `idle_interval`. Run it every minute from the scheduler.
+ * Syncs light wallets; run it every minute from the scheduler. Each sync asks the providers only
+ * for the addresses that are due by their own interval (smart polling, see LightWalletSync), so
+ * a run over quiet wallets costs no requests.
  */
 class BitcoinLightSyncCommand extends Command
 {
@@ -23,7 +22,7 @@ class BitcoinLightSyncCommand extends Command
 
         $wallets = $this->argument('wallet_id')
             ? $model::query()->whereKey($this->argument('wallet_id'))->where('mode', 'light')->get()
-            : $model::query()->where('mode', 'light')->get()->filter(fn (BitcoinWallet $wallet) => $this->isDue($wallet));
+            : $model::query()->where('mode', 'light')->get();
 
         foreach ($wallets as $wallet) {
             try {
@@ -39,17 +38,5 @@ class BitcoinLightSyncCommand extends Command
         }
 
         return self::SUCCESS;
-    }
-
-    protected function isDue(BitcoinWallet $wallet): bool
-    {
-        if (!$wallet->sync_at) {
-            return true;
-        }
-
-        $active = $wallet->touch_at && $wallet->touch_at->gte(Date::now()->subSeconds((int)config('bitcoin.light.active_window', 1800)));
-        $interval = (int)config($active ? 'bitcoin.light.active_interval' : 'bitcoin.light.idle_interval', 600);
-
-        return $wallet->sync_at->lte(Date::now()->subSeconds($interval - 5));
     }
 }

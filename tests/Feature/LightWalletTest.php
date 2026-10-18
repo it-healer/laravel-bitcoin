@@ -484,15 +484,110 @@ it('rejects a broadcast when the providers return another txid', function () {
 
 /* ---------- Scheduling ---------- */
 
-it('syncs touched wallets every minute and the rest less often', function () {
-    $active = lightSetup();
-    $idle = Bitcoin::createLightWalletFromXpub('w2', 'xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ');
+/* ---------- Smart polling ---------- */
 
-    $active->update(['touch_at' => now(), 'sync_at' => now()->subSeconds(70)]);
-    $idle->update(['sync_at' => now()->subSeconds(70)]);
+/**
+ * A wallet with four issued addresses already looked at (stats known), synced just now:
+ * cold (issued long ago, quiet), new (issued today), watched (a merchant order waits) and
+ * pending (an unconfirmed transaction).
+ *
+ * @return array<string, string> role => address
+ */
+function pollingSetup(): array
+{
+    $wallet = lightSetup();
+    $wallet->update(['gap_scan_at' => now(), 'touch_at' => null]);
+    $empty = hash('sha256', json_encode([[], []]));
 
+    $roles = ['cold' => 0, 'new' => 1, 'watched' => 2, 'pending' => 3];
+    foreach ($roles as $role => $index) {
+        $address = $wallet->addresses()->where('chain', 0)->where('index', $index)->first();
+        $address->update([
+            'issued_at' => $role === 'cold' ? now()->subDays(60) : now(),
+            'available' => true,
+            'stats_hash' => $empty,
+            'sync_at' => now(),
+            'watch_until' => $role === 'watched' ? now()->addHours(2) : null,
+            'mempool_tx_count' => $role === 'pending' ? 1 : 0,
+        ]);
+        $roles[$role] = $address->address;
+    }
+
+    return $roles;
+}
+
+function polled(callable $run): array
+{
+    $before = count(Http::recorded());
+    $run();
+
+    return collect(Http::recorded())->slice($before)
+        ->map(fn ($pair) => parse_url($pair[0]->url(), PHP_URL_PATH))
+        ->filter(fn ($path) => preg_match('#^/api/address/[^/]+$#', $path))
+        ->map(fn ($path) => basename($path))
+        ->unique()->sort()->values()->all();
+}
+
+it('asks each address by its own interval', function () {
+    $roles = pollingSetup();
+    $wallet = BitcoinWallet::where('name', 'w1')->first();
+    $sorted = fn (array $list) => collect($list)->sort()->values()->all();
+
+    $this->travel(2)->minutes();
+    expect(polled(fn () => syncWallet($wallet, asIs: true)))->toBe($sorted([$roles['watched'], $roles['pending']]));
+
+    $this->travel(10)->minutes();
+    expect(polled(fn () => syncWallet($wallet, asIs: true)))->toBe($sorted([$roles['new'], $roles['watched'], $roles['pending']]));
+
+    $this->travel(1)->days();
+    expect(polled(fn () => syncWallet($wallet, asIs: true)))->toContain($roles['cold']);
+});
+
+it('asks every issued address every minute while the wallet is open', function () {
+    $roles = pollingSetup();
+    $wallet = BitcoinWallet::where('name', 'w1')->first();
+    $wallet->update(['touch_at' => now()]);
+
+    $this->travel(2)->minutes();
+
+    expect(polled(fn () => syncWallet($wallet, asIs: true)))->toBe(collect($roles)->sort()->values()->all());
+});
+
+it('costs no request at all when nothing is due and nothing is confirming', function () {
+    pollingSetup();
+    $wallet = BitcoinWallet::where('name', 'w1')->first();
+    $wallet->addresses()->update(['watch_until' => null, 'mempool_tx_count' => 0]);
+    $before = count(Http::recorded());
+
+    $this->travel(2)->minutes();
     $this->artisan('bitcoin:light-sync')->assertSuccessful();
 
-    expect($active->fresh()->sync_at->gt(now()->subSeconds(5)))->toBeTrue()
-        ->and($idle->fresh()->sync_at->lt(now()->subSeconds(60)))->toBeTrue();
+    expect(count(Http::recorded()))->toBe($before);
+});
+
+it('marks a change seen after an earlier look as activity, not the first look', function () {
+    $wallet = lightSetup();
+    $wallet->update(['gap_scan_at' => now()]);
+    Bitcoin::createAddress($wallet);
+    addTx(str_repeat('a', 64), [[STRANGER, 150_000]], [[RECEIVE_0, 100_000]], 899_000);
+
+    syncWallet($wallet);
+    $address = $wallet->addresses()->where('address', RECEIVE_0)->first();
+    expect($address->activity_at)->toBeNull();      // first look: history, not activity
+
+    addTx(str_repeat('b', 64), [[STRANGER, 50_000]], [[RECEIVE_0, 40_000]]);
+    syncWallet($wallet);
+
+    expect($address->fresh()->activity_at)->not->toBeNull()
+        ->and($address->fresh()->mempool_tx_count)->toBe(1);
+});
+
+it('never shortens the watch of an address', function () {
+    $wallet = lightSetup();
+    $address = Bitcoin::createAddress($wallet);
+
+    Bitcoin::watchAddress($address, now()->addHours(3));
+    Bitcoin::watchAddress($address->fresh(), now()->addHour());
+
+    expect($address->fresh()->watch_until->diffInMinutes(now()->addHours(3)))->toBeLessThan(1);
 });

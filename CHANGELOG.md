@@ -2,6 +2,19 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.4.0 - 2026-10-19
+
+### Added
+
+- Smart polling of light wallets: every address has its own interval. Every `active_interval`
+  (60 s) while a merchant order waits on it (`Bitcoin::watchAddress($address, $until)`), while it
+  has an unconfirmed transaction or while its wallet is open; every `idle_interval` (600 s) when
+  issued within `new_address_days` (7) or active within `hot_window_days` (30); otherwise every
+  `cold_interval` (a day). `bitcoin:light-sync` runs every minute over all light wallets and asks
+  the providers only for the due addresses; a run with nothing due and nothing confirming costs
+  no request. New columns `mempool_tx_count`, `activity_at`, `watch_until` on `bitcoin_addresses`
+  (migration — publish and run it).
+
 ## v2.3.2 - 2026-10-18
 
 ### Fixed

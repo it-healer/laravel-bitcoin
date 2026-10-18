@@ -182,8 +182,18 @@ function lightSetup(): BitcoinWallet
     return $wallet;
 }
 
-function syncWallet(BitcoinWallet $wallet, bool $full = false): BitcoinWallet
+/**
+ * A sync a minute later, with the wallet open: every issued address is due (smart polling would
+ * skip an address looked at a second ago). `$asIs` — without moving the clock or opening it.
+ */
+function syncWallet(BitcoinWallet $wallet, bool $full = false, bool $asIs = false): BitcoinWallet
 {
+    if (!$asIs) {
+        \Illuminate\Support\Facades\Date::setTestNow(\Illuminate\Support\Facades\Date::now()->addSeconds(61));
+        $wallet->forceFill(['touch_at' => \Illuminate\Support\Facades\Date::now()])->saveQuietly();
+        \Illuminate\Support\Facades\Cache::forget('bitcoin:light:tip');
+    }
+
     Bitcoin::syncLightWallet($wallet->fresh(), $full);
 
     return $wallet->fresh();

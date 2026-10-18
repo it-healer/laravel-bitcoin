@@ -139,7 +139,9 @@ Bitcoin::bumpLightFee($wallet, $txid, feeRate: 20, seedHex: $seedHex); // RBF
 Bitcoin::convertToLight($nodeWallet, Bitcoin::xpubFromSeed($seedHex));  // leave the node mode
 ```
 
-Schedule `bitcoin:light-sync` every minute. Settings — `config('bitcoin.light')`: derivation
+Schedule `bitcoin:light-sync` every minute: each address is asked by its own interval (smart
+polling) — every minute while watched (`Bitcoin::watchAddress($address, $until)`), pending or its
+wallet is open, every 10 minutes when new or recently active, once a day when quiet. Settings — `config('bitcoin.light')`: derivation
 path, gap limit, sync intervals, provider cooldown, request pause.
 
 ## Electrum
