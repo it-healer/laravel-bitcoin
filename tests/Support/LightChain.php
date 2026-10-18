@@ -154,6 +154,9 @@ function fakeEsplora(): void
                     : hash('sha256', $request->body()));
             })(),
             (bool)preg_match('#^address/([^/]+)/utxo$#', $path, $m) => Http::response(chainState()->utxos[$m[1]] ?? []),
+            (bool)preg_match('#^tx/([0-9a-f]{64})$#', $path, $m) => isset(chainState()['esplora'][$m[1]])
+                ? Http::response(chainState()['esplora'][$m[1]])
+                : Http::response('Transaction not found', 404),
             $path === 'v1/fees/recommended' => Http::response(chainState()->fees),
             default => Http::response('not found', 404),
         };
@@ -194,4 +197,45 @@ function btc8(mixed $value): string
 function requestsTo(string $pattern): int
 {
     return collect(Http::recorded())->filter(fn ($pair) => preg_match($pattern, parse_url($pair[0]->url(), PHP_URL_PATH)))->count();
+}
+
+
+/**
+ * Esplora's JSON of a broadcast transaction (as GET /tx/{txid} returns it): prevouts from the
+ * funded UTXOs, output addresses from `$addresses` (script hex => address).
+ *
+ * @param array<string, string> $addresses
+ */
+function esploraTxFromHex(string $hex, array $addresses): array
+{
+    $tx = \ItHealer\LaravelBitcoin\Light\Tx\Transaction::fromHex($hex);
+    $utxos = collect(chainState()->utxos)->flatMap(fn ($list, $address) => array_map(fn ($u) => [...$u, 'address' => $address], $list));
+
+    $vin = array_map(function ($input) use ($utxos) {
+        $utxo = $utxos->first(fn ($u) => $u['txid'] === $input['txid'] && $u['vout'] === $input['vout']);
+
+        return [
+            'txid' => $input['txid'],
+            'vout' => $input['vout'],
+            'sequence' => $input['sequence'],
+            'prevout' => ['scriptpubkey' => bin2hex(\ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress($utxo['address'])), 'scriptpubkey_address' => $utxo['address'], 'value' => $utxo['value']],
+        ];
+    }, $tx->inputs);
+
+    $vout = array_map(fn ($output) => array_filter([
+        'scriptpubkey' => bin2hex($output['script']),
+        'scriptpubkey_address' => $addresses[bin2hex($output['script'])] ?? null,
+        'value' => $output['value'],
+    ], fn ($value) => $value !== null), $tx->outputs);
+
+    return [
+        'txid' => $tx->txid(),
+        'version' => $tx->version,
+        'locktime' => $tx->locktime,
+        'vin' => $vin,
+        'vout' => $vout,
+        'weight' => strlen($tx->serializeLegacy()) * 3 + strlen(hex2bin($hex)),
+        'fee' => array_sum(array_column(array_column($vin, 'prevout'), 'value')) - array_sum(array_column($tx->outputs, 'value')),
+        'status' => ['confirmed' => false],
+    ];
 }

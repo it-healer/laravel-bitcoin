@@ -152,4 +152,15 @@ trait LightWallets
             'confirmations' => $height !== null ? max(0, $pool->tipHeight() - $height + 1) : 0,
         ];
     }
+
+    /**
+     * Speeds up an unconfirmed transaction of a light wallet (RBF): the same transaction with a
+     * higher fee, paid from the change.
+     *
+     * @return array{txid: string, old_txid: string, fee: string, fee_rate: float}
+     */
+    public function bumpLightFee(BitcoinWallet $wallet, string $txid, float $feeRate, #[\SensitiveParameter] ?string $seedHex): array
+    {
+        return (new LightTransfers($wallet))->bumpFee($txid, $feeRate, $seedHex);
+    }
 }

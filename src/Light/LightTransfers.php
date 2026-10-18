@@ -13,6 +13,7 @@ use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Psbt\PsbtBuilder;
 use ItHealer\LaravelBitcoin\Light\Psbt\Signer;
 use ItHealer\LaravelBitcoin\Light\Tx\Script;
+use ItHealer\LaravelBitcoin\Light\Tx\Transaction;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
 use ItHealer\LaravelBitcoin\Models\BitcoinTransfer;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
@@ -127,6 +128,106 @@ class LightTransfers
             }
 
             return $this->record($from, $preview, $plan);
+        });
+    }
+
+    /**
+     * Replaces an unconfirmed transaction of this wallet with the same one paying a higher fee
+     * (BIP125): same inputs and recipients, the extra fee comes out of the change. The new fee
+     * must exceed the old one by at least 1 sat/vB of the size. Transfers move to the new txid,
+     * the old transaction is marked dropped.
+     *
+     * @return array{txid: string, old_txid: string, fee: string, fee_rate: float}
+     */
+    public function bumpFee(string $txid, float $feeRate, #[\SensitiveParameter] ?string $seedHex): array
+    {
+        if (!$seedHex) {
+            throw new \RuntimeException('Speeding up a transaction needs the wallet seed to sign.');
+        }
+
+        return Cache::lock('bitcoin:light-send:'.$this->wallet->getKey(), 120)->block(15, function () use ($txid, $feeRate, $seedHex): array {
+            $pool = App::make(ProviderPool::class);
+            $tx = $pool->call(fn (EsploraApi $api) => $api->transaction($txid));
+
+            if ($tx['status']['confirmed'] ?? false) {
+                throw new \RuntimeException('The transaction is already confirmed.');
+            }
+
+            $own = $this->wallet->addresses()->get()->keyBy('address');
+            $inputs = [];
+
+            foreach ($tx['vin'] as $vin) {
+                $address = $own->get($vin['prevout']['scriptpubkey_address'] ?? '');
+
+                if (!$address || $address->chain === null || ($vin['sequence'] ?? 0xffffffff) >= 0xfffffffe) {
+                    throw new \RuntimeException('Only an RBF transaction spending this wallet\'s coins can be sped up.');
+                }
+
+                $inputs[] = [
+                    'txid' => $vin['txid'],
+                    'vout' => (int)$vin['vout'],
+                    'value' => (int)$vin['prevout']['value'],
+                    'script' => hex2bin($vin['prevout']['scriptpubkey']),
+                    'path' => rtrim((string)$this->wallet->derivation_path, '/').'/'.$address->chain.'/'.$address->index,
+                ];
+            }
+
+            $outputs = array_map(fn ($vout) => [
+                'value' => (int)$vout['value'],
+                'script' => hex2bin($vout['scriptpubkey']),
+                'address' => $vout['scriptpubkey_address'] ?? null,
+                'role' => isset($vout['scriptpubkey_address']) && $own->has($vout['scriptpubkey_address']) ? 'change' : (($vout['value'] ?? 0) == 0 ? 'data' : 'recipient'),
+            ], $tx['vout']);
+
+            $changeIndex = array_key_last(array_filter($outputs, fn ($o) => $o['role'] === 'change'));
+
+            if ($changeIndex === null) {
+                throw new \RuntimeException('The transaction has no change to pay a higher fee from.');
+            }
+
+            $oldFee = (int)$tx['fee'];
+            $vsize = (int)ceil($tx['weight'] / 4);
+            $newFee = max((int)ceil($feeRate * $vsize), $oldFee + $vsize);
+            $outputs[$changeIndex]['value'] -= $newFee - $oldFee;
+
+            if ($outputs[$changeIndex]['value'] < Script::dust(Script::parse((string)$outputs[$changeIndex]['address'])['kind'])) {
+                throw new \RuntimeException('Not enough change to pay the higher fee.');
+            }
+
+            $unsigned = new Transaction(
+                inputs: array_map(fn ($i) => ['txid' => $i['txid'], 'vout' => $i['vout'], 'sequence' => PsbtBuilder::SEQUENCE_RBF], $inputs),
+                outputs: array_map(fn ($o) => ['value' => $o['value'], 'script' => $o['script']], $outputs),
+                version: (int)$tx['version'],
+                locktime: (int)$tx['locktime'],
+            );
+
+            $plan = [
+                'inputs' => $inputs,
+                'outputs' => $outputs,
+                'fee' => $newFee,
+                'vsize' => $vsize,
+                'fee_rate' => round($newFee / $vsize, 2),
+                'txid' => $unsigned->txid(),
+                'psbt' => base64_encode(PsbtBuilder::psbt($unsigned, $inputs)),
+            ];
+
+            $signed = Signer::sign($plan, $seedHex);
+            $pool->broadcast($signed['hex'], $plan['txid']);
+
+            DB::transaction(function () use ($txid, $plan, $newFee, $oldFee): void {
+                $old = $this->wallet->transactions()->where('txid', $txid)->first();
+
+                $this->wallet->transactions()->updateOrCreate(['txid' => $plan['txid']], [
+                    'direction' => $old?->direction ?? 'out',
+                    'amount' => BigDecimal::of($old?->amount ?? 0)->minus(self::btc($newFee - $oldFee)),
+                    'fee' => self::btc($newFee),
+                    'time_at' => Date::now(),
+                ]);
+                $old?->update(['dropped_at' => Date::now()]);
+                $this->wallet->transfers()->where('txid', $txid)->update(['txid' => $plan['txid']]);
+            });
+
+            return ['txid' => $plan['txid'], 'old_txid' => $txid, 'fee' => (string)self::btc($newFee), 'fee_rate' => $plan['fee_rate']];
         });
     }
 
