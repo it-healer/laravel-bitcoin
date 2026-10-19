@@ -101,6 +101,11 @@ return [
         'cooldown_seconds' => 60,
         'dropped_after' => 1800,
         'timeout' => 20,
+        // Time to resolve and connect; a request that failed before reaching the provider (DNS did
+        // not answer, host unreachable) is repeated this many times before the next provider is tried
+        'connect_timeout' => (int)env('BITCOIN_HTTP_CONNECT_TIMEOUT', 20),
+        'retries' => (int)env('BITCOIN_HTTP_RETRIES', 2),
+        'retry_sleep_ms' => 500,
         // A wallet sync holds a lock this long at most (a full sync of a busy wallet takes minutes)
         'lock_seconds' => 900,
         // Deposits mined this many blocks before the wallet was added are history (no webhook)

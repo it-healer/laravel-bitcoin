@@ -2,6 +2,17 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.4.1 - 2026-10-19
+
+### Fixed
+
+- Esplora provider requests: 20 s to resolve the host and connect instead of 10 s
+  (`bitcoin.light.connect_timeout`, env `BITCOIN_HTTP_CONNECT_TIMEOUT`). A request that failed before
+  reaching the provider — cURL 6, 7, or 28 while resolving or connecting — is repeated up to
+  `bitcoin.light.retries` times (default 2, 500 ms apart) before the next provider is tried. A timeout
+  after the request was sent is never repeated. A repeated broadcast is the same signed transaction,
+  and the request counter counts the request once.
+
 ## v2.4.0 - 2026-10-19
 
 ### Added

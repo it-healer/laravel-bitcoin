@@ -196,8 +196,28 @@ class EsploraApi
     {
         $client = Http::baseUrl(rtrim($this->baseUrl, '/').'/')
             ->timeout((int)config('bitcoin.light.timeout', 20))
-            ->connectTimeout(10);
+            ->connectTimeout((int)config('bitcoin.light.connect_timeout', 20))
+            // A failure before the connection is made (DNS did not answer, host unreachable) means
+            // the provider never got the request, so it is safe to repeat — broadcasting too
+            ->retry(
+                max(1, 1 + (int)config('bitcoin.light.retries', 2)),
+                (int)config('bitcoin.light.retry_sleep_ms', 500),
+                fn (\Throwable $e) => self::failedBeforeConnecting($e),
+                false,
+            );
 
         return $this->proxy ? $client->withOptions(['proxy' => $this->proxy]) : $client;
+    }
+
+    /**
+     * The request did not reach the provider: cURL 6 (could not resolve host), 7 (could not connect)
+     * or 28 while resolving or connecting — matched at the start of the message only. A timeout
+     * after the request was sent is not one. Even a repeated broadcast is the same signed
+     * transaction (same txid): a second copy is accepted as already known.
+     */
+    public static function failedBeforeConnecting(\Throwable $e): bool
+    {
+        return $e instanceof ConnectionException
+            && preg_match('/^cURL error (6|7): |^cURL error 28: (Resolving|Connection) timed out /', $e->getMessage()) === 1;
     }
 }
