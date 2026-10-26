@@ -15,6 +15,7 @@ use ItHealer\LaravelBitcoin\Light\Api\ProviderPool;
 use ItHealer\LaravelBitcoin\Light\Keys\ExtendedKey;
 use ItHealer\LaravelBitcoin\Light\Sync\LightWalletSync;
 use ItHealer\LaravelBitcoin\Models\BitcoinAddress;
+use ItHealer\LaravelBitcoin\Models\BitcoinTransfer;
 use ItHealer\LaravelBitcoin\Models\BitcoinWallet;
 
 /**
@@ -163,6 +164,39 @@ trait LightWallets
             'block_height' => $height,
             'confirmations' => $height !== null ? max(0, $pool->tipHeight() - $height + 1) : 0,
         ];
+    }
+
+    /**
+     * Plans collecting all spendable coins of several addresses of a light wallet to one
+     * address in a single transaction, the fee taken from the amount. Without the plan itself.
+     *
+     * @param list<BitcoinAddress|string> $from
+     * @return array{from: list<string>, to: string, amount: string, fee: string, feeRate: float, vsize: int, total: string, perAddress: array<string, string>, inputs: list<array{txid: string, vout: int}>}
+     */
+    public function previewLightSweep(BitcoinWallet $wallet, array $from, string $to, ?float $feeRate = null): array
+    {
+        $preview = (new LightTransfers($wallet))->previewSweep($from, $to, $feeRate);
+        unset($preview['plan']);
+
+        return $preview;
+    }
+
+    /**
+     * Collects all spendable coins of several addresses of a light wallet to one address in a
+     * single transaction (see previewLightSweep()). One transfer is recorded, from the address
+     * that gives the most.
+     *
+     * @param list<BitcoinAddress|string> $from
+     */
+    public function sweepLight(
+        BitcoinWallet $wallet,
+        array $from,
+        string $to,
+        #[\SensitiveParameter] ?string $seedHex,
+        ?float $feeRate = null,
+        ?string $comment = null,
+    ): BitcoinTransfer {
+        return (new LightTransfers($wallet))->sweep($from, $to, $seedHex, $feeRate, $comment);
     }
 
     /**

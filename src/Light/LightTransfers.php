@@ -132,6 +132,157 @@ class LightTransfers
     }
 
     /**
+     * Plans collecting every spendable coin of several addresses to one address in a single
+     * transaction: the fee is taken from the amount, there is no change. `perAddress` — what
+     * each address gives (in BTC); addresses without spendable coins are left out.
+     *
+     * @param list<BitcoinAddress|string> $from
+     * @return array{from: list<string>, to: string, amount: string, fee: string, feeRate: float, vsize: int, total: string, perAddress: array<string, string>, inputs: list<array{txid: string, vout: int}>, plan: array}
+     */
+    public function previewSweep(array $from, string $to, ?float $feeRate = null): array
+    {
+        if ($from === []) {
+            throw new \InvalidArgumentException('No addresses to collect from.');
+        }
+
+        $addresses = [];
+        $utxos = [];
+        $perAddress = [];
+
+        foreach ($from as $item) {
+            $address = $this->address($item);
+
+            foreach ($this->spendableUtxos($address) as $utxo) {
+                $utxos[] = $utxo;
+                $perAddress[$address->address] = ($perAddress[$address->address] ?? 0) + $utxo['value'];
+            }
+
+            if (isset($perAddress[$address->address])) {
+                $addresses[] = $address;
+            }
+        }
+
+        if ($utxos === []) {
+            throw new \RuntimeException('Nothing to collect: the addresses have no spendable coins.');
+        }
+
+        $total = array_sum(array_column($utxos, 'value'));
+
+        $plan = PsbtBuilder::build(
+            utxos: $utxos,
+            recipients: [['address' => $to, 'amount' => self::btc($total)]],
+            feeRate: $this->feeRate($feeRate),
+            changeAddress: $addresses[0]->address,
+            subtractFeeFromFirst: true,
+        );
+
+        $sent = array_sum(array_map(fn ($o) => $o['role'] === 'recipient' ? $o['value'] : 0, $plan['outputs']));
+
+        return [
+            'from' => array_map(fn (BitcoinAddress $address) => $address->address, $addresses),
+            'to' => $to,
+            'amount' => (string)self::btc($sent),
+            'fee' => (string)self::btc($plan['fee']),
+            'feeRate' => $plan['fee_rate'],
+            'vsize' => $plan['vsize'],
+            'total' => (string)self::btc($total),
+            'perAddress' => array_map(fn (int $value) => (string)self::btc($value), $perAddress),
+            'inputs' => array_map(fn ($u) => ['txid' => $u['txid'], 'vout' => $u['vout']], $plan['inputs']),
+            'plan' => $plan,
+        ];
+    }
+
+    /**
+     * Collects the coins of several addresses to one address (see previewSweep()): signs,
+     * broadcasts and records one transfer, from the address that gives the most.
+     *
+     * @param list<BitcoinAddress|string> $from
+     */
+    public function sweep(
+        array $from,
+        string $to,
+        #[\SensitiveParameter] ?string $seedHex,
+        ?float $feeRate = null,
+        ?string $comment = null,
+        ?array &$preview = null,
+    ): BitcoinTransfer {
+        if (!$seedHex) {
+            throw new \RuntimeException('Sending from a light wallet needs the wallet seed to sign.');
+        }
+
+        return Cache::lock('bitcoin:light-send:'.$this->wallet->getKey(), 120)->block(15, function () use ($from, $to, $seedHex, $feeRate, $comment, &$preview): BitcoinTransfer {
+            $preview = $this->previewSweep($from, $to, $feeRate);
+            $plan = $preview['plan'];
+
+            $signed = Signer::sign($plan, $seedHex);
+
+            // Reserved before the broadcast: a provider may accept it even when the answer is lost
+            $this->reserve($plan['inputs'], now()->addHours((int)config('bitcoin.light.reserve_hours', 6)));
+
+            try {
+                App::make(ProviderPool::class)->broadcast($signed['hex'], $plan['txid']);
+            } catch (\RuntimeException $e) {
+                if (!$this->isKnown($plan['txid'])) {
+                    $this->reserve($plan['inputs'], now()->addMinutes((int)config('bitcoin.light.failed_reserve_minutes', 10)));
+
+                    throw $e;
+                }
+            }
+
+            return $this->recordSweep($preview, $plan, $comment);
+        });
+    }
+
+    /**
+     * The sweep transfer (from the address that gives the most), the wallet transaction, and the
+     * balances of the addresses lowered at once — the next sync brings the provider's view.
+     */
+    protected function recordSweep(array $preview, array $plan, ?string $comment): BitcoinTransfer
+    {
+        return DB::transaction(function () use ($preview, $plan, $comment): BitcoinTransfer {
+            $now = Date::now();
+            $amounts = $preview['perAddress'];
+            uasort($amounts, fn (string $a, string $b) => BigDecimal::of($b)->compareTo($a));
+            $addresses = $this->wallet->addresses()->whereIn('address', array_keys($amounts))->get()->keyBy('address');
+            $main = $addresses->get(array_key_first($amounts));
+            $output = collect($plan['outputs'])->firstWhere('role', 'recipient');
+            $isOwn = $this->wallet->addresses()->where('address', $output['address'])->exists();
+            $leaves = ($isOwn ? 0 : $output['value']) + $plan['fee'];
+
+            $transfer = $this->wallet->transfers()->updateOrCreate(
+                ['address_id' => $main->id, 'txid' => $plan['txid'], 'receiver_address' => $output['address']],
+                [
+                    'amount' => self::btc($output['value']),
+                    'comment' => $comment,
+                    'confirmations' => 0,
+                    'time_at' => $now,
+                ],
+            );
+            $transfer->setRelation('wallet', $this->wallet);
+            $transfer->setRelation('address', $main);
+
+            $this->wallet->transactions()->updateOrCreate(['txid' => $plan['txid']], [
+                'direction' => $isOwn ? 'self' : 'out',
+                'amount' => self::btc(-$leaves),
+                'fee' => self::btc($plan['fee']),
+                'time_at' => $now,
+            ]);
+
+            foreach ($amounts as $address => $amount) {
+                $model = $addresses->get($address);
+                $model?->update(['balance' => BigDecimal::of($model->balance ?? 0)->minus($amount), 'stats_hash' => null]);
+            }
+
+            $this->wallet->update([
+                'balance' => BigDecimal::of($this->wallet->balance ?? 0)->minus(self::btc($leaves)),
+                'touch_at' => $now,
+            ]);
+
+            return $transfer;
+        });
+    }
+
+    /**
      * Replaces an unconfirmed transaction of this wallet with the same one paying a higher fee
      * (BIP125): same inputs and recipients, the extra fee comes out of the change. The new fee
      * must exceed the old one by at least 1 sat/vB of the size. Transfers move to the new txid,

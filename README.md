@@ -136,6 +136,7 @@ Sending (the server signs with the bundled Node signer, `node` must be in PATH):
 ```php
 Bitcoin::sendMassPSBT($wallet, $address, [['address' => 'bc1q…', 'amount' => '0.001']], seedHex: $seedHex, feeRate: 5);
 Bitcoin::bumpLightFee($wallet, $txid, feeRate: 20, seedHex: $seedHex); // RBF
+Bitcoin::sweepLight($wallet, [$address1, $address2], 'bc1q…', $seedHex); // all coins of the addresses, one transaction
 Bitcoin::convertToLight($nodeWallet, Bitcoin::xpubFromSeed($seedHex));  // leave the node mode
 ```
 

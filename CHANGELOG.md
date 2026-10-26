@@ -2,6 +2,17 @@
 
 All notable changes to `laravel-bitcoin` will be documented in this file.
 
+## v2.5.0 - 2026-10-26
+
+### Added
+
+- Collecting several addresses of a light wallet in one transaction:
+  `Bitcoin::previewLightSweep($wallet, $addresses, $to, $feeRate)` and
+  `Bitcoin::sweepLight($wallet, $addresses, $to, $seedHex, $feeRate, $comment)`. Every spendable coin
+  of the addresses goes to `$to`, the fee is taken from the amount, there is no change. The preview
+  shows what each address gives (`perAddress`); addresses without spendable coins are left out. The
+  coins are reserved as for a send, and one transfer is recorded, from the address that gives the most.
+
 ## v2.4.1 - 2026-10-19
 
 ### Fixed

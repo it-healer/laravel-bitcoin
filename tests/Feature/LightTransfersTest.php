@@ -362,3 +362,75 @@ it('repairs a recorded transfer left without height while its transaction is alr
     expect($transfer->fresh()->block_height)->toBe(899_998)
         ->and($transfer->fresh()->confirmations)->toBe(3);
 });
+
+/**
+ * Coins on any address of the wallet, like fundReceive0().
+ */
+function fundAddress(string $address, int ...$values): void
+{
+    static $nonce = 1000;
+    $funding = new Transaction(
+        inputs: [['txid' => str_pad(dechex(++$nonce), 64, 'e', STR_PAD_LEFT), 'vout' => 0, 'sequence' => 0xffffffff]],
+        outputs: array_map(fn ($value) => ['value' => $value, 'script' => \ItHealer\LaravelBitcoin\Light\Tx\Script::forAddress($address)], $values),
+    );
+    $txid = rememberRaw(bin2hex($funding->serializeLegacy()));
+
+    $utxos = chainState()->utxos;
+    foreach ($values as $i => $value) {
+        $utxos[$address][] = ['txid' => $txid, 'vout' => $i, 'value' => $value, 'status' => ['confirmed' => true, 'block_height' => 899_000]];
+    }
+    chainState()->utxos = $utxos;
+}
+
+it('previews collecting several addresses in one transaction, the fee taken from the amount', function () {
+    $wallet = sendSetup();
+    Bitcoin::createAddress($wallet);
+    fundAddress(RECEIVE_0, 100_000);
+    fundAddress(RECEIVE_1, 30_000, 20_000);
+
+    $preview = Bitcoin::previewLightSweep($wallet->fresh(), [RECEIVE_0, RECEIVE_1, CHANGE_0], STRANGER);
+
+    // 3 inputs, 1 output: 10.5 + 204 + 31 = 245.5 → 246 vB × 10
+    expect($preview['from'])->toBe([RECEIVE_0, RECEIVE_1])
+        ->and($preview['total'])->toBe('0.00150000')
+        ->and($preview['fee'])->toBe('0.00002460')
+        ->and($preview['amount'])->toBe('0.00147540')
+        ->and($preview['perAddress'])->toBe([RECEIVE_0 => '0.00100000', RECEIVE_1 => '0.00050000'])
+        ->and($preview['inputs'])->toHaveCount(3)
+        ->and($preview)->not->toHaveKey('plan')
+        ->and(chainState()->broadcasts)->toBe([]);
+});
+
+it('collects several addresses: one transaction without change, one transfer, balances lowered', function () {
+    $wallet = sendSetup();
+    Bitcoin::createAddress($wallet);
+    $wallet->update(['balance' => '0.0015']);
+    $wallet->addresses()->where('address', RECEIVE_0)->update(['balance' => '0.001']);
+    $wallet->addresses()->where('address', RECEIVE_1)->update(['balance' => '0.0005']);
+    fundAddress(RECEIVE_0, 100_000);
+    fundAddress(RECEIVE_1, 50_000);
+
+    $transfer = Bitcoin::sweepLight($wallet->fresh(), [RECEIVE_0, RECEIVE_1], STRANGER, transferSeed(), comment: 'collect #1');
+    $tx = Transaction::fromHex(chainState()->broadcasts[0]['hex']);
+
+    // 2 inputs, 1 output: 10.5 + 136 + 31 = 177.5 → 178 vB × 10
+    expect($tx->inputs)->toHaveCount(2)
+        ->and($tx->outputs)->toHaveCount(1)
+        ->and($tx->outputs[0]['value'])->toBe(150_000 - 1780)
+        ->and($transfer->txid)->toBe($tx->txid())
+        ->and($transfer->address->address)->toBe(RECEIVE_0)
+        ->and($transfer->receiver_address)->toBe(STRANGER)
+        ->and($transfer->comment)->toBe('collect #1')
+        ->and(btc8($transfer->amount))->toBe('0.00148220')
+        ->and($wallet->transactions()->sole())->direction->toBe('out')
+        ->and(btc8($wallet->addresses()->where('address', RECEIVE_0)->value('balance')))->toBe('0.00000000')
+        ->and(btc8($wallet->addresses()->where('address', RECEIVE_1)->value('balance')))->toBe('0.00000000')
+        ->and(btc8($wallet->fresh()->balance))->toBe('0.00000000');
+});
+
+it('refuses to collect when the addresses have nothing to spend or without the seed', function () {
+    $wallet = sendSetup();
+
+    expect(fn () => Bitcoin::previewLightSweep($wallet, [RECEIVE_0], STRANGER))->toThrow(\RuntimeException::class, 'Nothing to collect')
+        ->and(fn () => Bitcoin::sweepLight($wallet, [RECEIVE_0], STRANGER, null))->toThrow(\RuntimeException::class, 'needs the wallet seed');
+});
